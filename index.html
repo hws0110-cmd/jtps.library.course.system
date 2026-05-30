@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧選課系統</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="background-animation">
+        <div class="shape shape1"></div>
+        <div class="shape shape2"></div>
+        <div class="shape shape3"></div>
+    </div>
+
+    <!-- 登入畫面 -->
+    <div id="login-screen" class="screen active">
+        <div class="glass-card login-card">
+            <h1>瑞塘國小<br>圖書館選課系統</h1>
+            
+            <div id="announcement-box" class="announcement-box">
+                <strong>公告：</strong> 本系統開放選課期間為<br>
+                <span id="announcement-dates" class="highlight-dates">尚未設定</span>
+            </div>
+
+            <p class="subtitle">歡迎使用，請選擇登入身分</p>
+            
+            <div class="login-form">
+                <div class="user-login-section">
+                    <input type="text" id="class-input" class="form-input" placeholder="請輸入您的班級 (如：101)">
+                    <input type="password" id="user-password-input" class="form-input" placeholder="請輸入您的密碼" style="margin-top: 10px;">
+                    <button class="btn btn-primary" onclick="app.login('user')" style="margin-top: 15px;">一般使用者登入</button>
+                </div>
+                
+                <div class="divider">或</div>
+                
+                <div class="admin-login-section" style="display: flex; flex-direction: column; gap: 10px;">
+                    <input type="password" id="admin-password-input" class="form-input" placeholder="請輸入管理者密碼">
+                    <button class="btn btn-secondary" onclick="app.login('admin')">管理者登入</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 系統主畫面 -->
+    <div id="app-screen" class="screen">
+        <div class="glass-card main-card">
+            <header class="app-header">
+                <div>
+                    <h2 id="welcome-message">選課系統</h2>
+                    <p id="mode-badge" class="badge">一般模式</p>
+                </div>
+                <div class="header-controls">
+                    <button class="btn btn-outline" onclick="app.logout()">登出</button>
+                </div>
+            </header>
+
+            <div class="admin-controls" id="admin-controls" style="display: none; padding: 0; background: transparent; border: none;">
+                <div class="admin-wrapper">
+                    <!-- 左側分頁按鈕 -->
+                    <div class="admin-sidebar">
+                        <button class="tab-btn active" onclick="app.switchAdminTab('tab-time')">開放時間設定</button>
+                        <button class="tab-btn" onclick="app.switchAdminTab('tab-users')">帳號與密碼管理</button>
+                        <button class="tab-btn" onclick="app.switchAdminTab('tab-status')">登入與選課狀況</button>
+                        <button class="tab-btn" onclick="app.switchAdminTab('tab-schedule')">檢視全校課表</button>
+                    </div>
+
+                    <!-- 右側內容區塊 -->
+                    <div class="admin-content">
+                        <!-- 分頁 1: 開放時間設定 -->
+                        <div id="tab-time" class="tab-pane active" style="background: #fff3cd; color: #856404; padding: 15px; border-radius: 10px; border: 1px solid #ffeeba;">
+                            <p><strong>管理員模式：</strong>請設定系統開放選課的日期區間。</p>
+                            <div class="settings-group">
+                                <label>開放開始日期：<input type="date" id="admin-start-date" class="form-input date-input"></label>
+                                <label>開放結束日期：<input type="date" id="admin-end-date" class="form-input date-input"></label>
+                                <button class="btn btn-primary" onclick="app.saveSystemSettings()">儲存設定</button>
+                            </div>
+                        </div>
+
+                        <!-- 分頁 2: 帳號與密碼管理 -->
+                        <div id="tab-users" class="tab-pane" style="background: rgba(255,255,255,0.8); padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                            <h3 style="margin-bottom: 5px; color: #333;">使用者管理</h3>
+                            <p style="font-size: 0.85em; color: #e67e22; margin-bottom: 15px;">
+                                <strong>格式規範：</strong> 班級請輸入三位數字（如：101），年級限 一至六。<br>
+                                <strong>注意：</strong> 刪除帳號將同步移除該班級的所有選課紀錄。
+                            </p>
+                            <div class="user-management-group" style="margin-bottom: 20px;">
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
+                                    <input type="text" id="new-user-class" class="form-input" placeholder="班級" style="flex: 1; min-width: 80px;">
+                                    <input type="text" id="new-user-password" class="form-input" placeholder="密碼" style="flex: 1; min-width: 80px;">
+                                    <button class="btn btn-secondary" onclick="app.addUser()">新增帳號</button>
+                                </div>
+                                
+                                <div style="background: rgba(0, 0, 0, 0.03); padding: 15px; border-radius: 8px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                                        <label for="excel-upload" style="font-weight: bold; color: #333;">批次匯入使用者 (Excel)</label>
+                                        <button class="btn btn-outline" style="padding: 4px 8px; font-size: 0.8em;" onclick="app.downloadSampleExcel()">下載範例檔</button>
+                                    </div>
+                                    <p style="font-size: 0.85em; color: #555; margin-bottom: 10px;">請上傳包含「班級」、「密碼」標題欄位的 Excel 檔案 (.xlsx)。</p>
+                                    <input type="file" id="excel-upload" accept=".xlsx, .xls" class="form-input" onchange="app.handleExcelUpload(event)" style="padding: 8px; background: white; width: 100%;">
+                                </div>
+                            </div>
+
+                            <div class="table-responsive" style="max-height: 400px; overflow-y: auto; background: white; border-radius: 8px; border: 1px solid #eee;">
+                                <table class="schedule-table" style="font-size: 0.9em; margin-bottom: 0;">
+                                    <thead>
+                                        <tr>
+                                            <th>班級</th>
+                                            <th>密碼</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="user-list-body">
+                                        <!-- JS 生成 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 分頁 3: 登入與選課狀況 -->
+                        <div id="tab-status" class="tab-pane" style="background: rgba(255,255,255,0.8); padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <h3 style="margin: 0; color: #333;">各帳號登入與選課狀況</h3>
+                                <button class="btn btn-outline" style="padding: 4px 12px; font-size: 0.85em;" onclick="app.changeAdminPassword()">修改管理者密碼</button>
+                            </div>
+                            <div class="table-responsive" style="max-height: 500px; overflow-y: auto; background: white; border-radius: 8px; border: 1px solid #eee;">
+                                <table class="schedule-table" style="font-size: 0.9em; margin-bottom: 0;">
+                                    <thead>
+                                        <tr>
+                                            <th>班級</th>
+                                            <th>最後登入時間</th>
+                                            <th>選課狀態</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="status-list-body">
+                                        <!-- JS 生成 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 分頁 4: 全校課表檢視 -->
+                        <div id="tab-schedule" class="tab-pane" style="background: rgba(255,255,255,0.8); padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                            <h3 style="margin-bottom: 15px; color: #333;">全校課表已被選課結果</h3>
+                            <p style="margin-bottom: 15px; color: #666;">課表中顯示選課班級的名稱。</p>
+                            <!-- JS 動態將 schedule-container 移入這裡 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="user-controls" id="user-controls" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <p id="user-instruction"><strong>選課限制：</strong>每人限選 <span class="highlight">1</span> 節課。每個課程限額 <span class="highlight">2</span> 人。<br><small style="color: #666;">（請注意：選擇後必須點擊右方按鈕才能完成存檔）</small></p>
+                    <button id="submit-btn" class="btn btn-primary submit-btn" onclick="app.submitSelections()">確定送出選課</button>
+                </div>
+            </div>
+
+            <div class="schedule-container" id="main-schedule-container">
+                <table class="schedule-table">
+                    <thead>
+                        <tr id="schedule-header">
+                            <th class="time-col">節次</th>
+                            <!-- 星期標題將由 JS 動態生成 -->
+                        </tr>
+                    </thead>
+                    <tbody id="schedule-body">
+                        <!-- 課表內容將由 JS 動態生成 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <img id="school-logo" src="校徽.png" alt="校徽" class="floating-logo">
+
+    <script src="app.js"></script>
+</body>
+</html>
