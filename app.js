@@ -1,17 +1,25 @@
+// 1. 初始化 Firebase 連線
+const firebaseConfig = {
+    apiKey: "AIzaSyDj0tyPXaNM2lMrxELUo2QPn-xec-sCB5I",
+    authDomain: "jtps-library-course-system.firebaseapp.com",
+    databaseURL: "https://jtps-library-course-system-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "jtps-library-course-system",
+    storageBucket: "jtps-library-course-system.firebasestorage.app",
+    messagingSenderId: "17056662142",
+    appId: "1:17056662142:web:8a3c6eea2fe585b1c3ce2f"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore(); // 建立 db 物件供後續使用
+
+
 const app = {
     mode: null, // 'user' | 'admin'
     currentUser: null,
     
-    // 狀態管理：使用 localStorage 模擬資料庫
-    // selectedCourses: {'mon-m1': ['User1', 'User2']}
-    selectedCourses: JSON.parse(localStorage.getItem('selectedCourses') || '{}'),
-    
-    // 系統設定：開放選課的日期區間與管理者密碼
-    systemSettings: JSON.parse(localStorage.getItem('systemSettings') || '{"openStartDate":"","openEndDate":"","adminPassword":"admin"}'),
-
-    systemUsers: JSON.parse(localStorage.getItem('systemUsers') || '{}'),
-
-    // 一般使用者的草稿選課 (尚未按下確定的狀態)
+	// 改為預設空值，從雲端下載
+    selectedCourses: {},
+    systemSettings: { openStartDate: "", openEndDate: "", adminPassword: "admin" },
+    systemUsers: {},
     draftSelections: [],
 
     // 星期定義
@@ -23,20 +31,32 @@ const app = {
         { id: 'fri', name: '星期五' }
     ],
 
-    init() {
-        // 確保 systemSettings 有 adminPassword (處理舊資料)
+// 2. 初始化：從雲端資料庫載入資料
+    async init() {
+        try {
+            // 從 Firebase Firestore 下載資料
+            const coursesDoc = await db.collection('system').doc('courses').get();
+            const settingsDoc = await db.collection('system').doc('settings').get();
+            const usersDoc = await db.collection('system').doc('users').get();
+            
+            if (coursesDoc.exists) this.selectedCourses = coursesDoc.data();
+            if (settingsDoc.exists) this.systemSettings = settingsDoc.data();
+            if (usersDoc.exists) this.systemUsers = usersDoc.data();
+        } catch (error) {
+            console.error("下載資料失敗，使用預設值:", error);
+        }
+        // 確保 systemSettings 有 adminPassword
         if (!this.systemSettings.adminPassword) {
             this.systemSettings.adminPassword = 'admin';
         }
-
         for (let key in this.selectedCourses) {
             if (!Array.isArray(this.selectedCourses[key])) {
                 this.selectedCourses[key] = [];
             }
         }
         
-        this.migrateToNumericClasses(); // 資料移轉：中文班級 -> 數字代碼
-        this.saveState();
+        this.migrateToNumericClasses(); // 班級代碼轉移
+        await this.saveState();        // 將轉移後的資料存回雲端
         this.updateAnnouncement();
         this.renderSchedule();
     },
@@ -86,10 +106,17 @@ const app = {
         }
     },
 
-    saveState() {
-        localStorage.setItem('selectedCourses', JSON.stringify(this.selectedCourses));
-        localStorage.setItem('systemSettings', JSON.stringify(this.systemSettings));
-        localStorage.setItem('systemUsers', JSON.stringify(this.systemUsers));
+  // 3. 儲存：將所有狀態同步到雲端資料庫
+    async saveState() {
+        try {
+            await db.collection('system').doc('courses').set(this.selectedCourses);
+            await db.collection('system').doc('settings').set(this.systemSettings);
+            await db.collection('system').doc('users').set(this.systemUsers);
+            console.log("雲端資料存檔成功！");
+        } catch (error) {
+            console.error("雲端存檔失敗:", error);
+            alert("雲端儲存失敗，請檢查網路連線或 Firebase 權限！");
+        }
     },
 
     updateAnnouncement() {
@@ -763,6 +790,7 @@ const app = {
     }
 };
 
-window.addEventListener('DOMContentLoaded', () => {
-    app.init();
+// 4. 當網頁載入完成，非同步啟動 app
+window.addEventListener('DOMContentLoaded', async () => {
+    await app.init();
 });
