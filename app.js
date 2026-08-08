@@ -31,13 +31,15 @@ const app = {
         { id: 'fri', name: '星期五' }
     ],
 
-// 2. 初始化：從雲端資料庫載入資料
+// 2. 初始化：從雲端資料庫載入資料與啟動即時監聽
     async init() {
         try {
-            // 從 Firebase Firestore 下載資料
-            const coursesDoc = await db.collection('system').doc('courses').get();
-            const settingsDoc = await db.collection('system').doc('settings').get();
-            const usersDoc = await db.collection('system').doc('users').get();
+            // 從 Firebase Firestore 下載初次資料
+            const [coursesDoc, settingsDoc, usersDoc] = await Promise.all([
+                db.collection('system').doc('courses').get(),
+                db.collection('system').doc('settings').get(),
+                db.collection('system').doc('users').get()
+            ]);
             
             if (coursesDoc.exists) this.selectedCourses = coursesDoc.data();
             if (settingsDoc.exists) this.systemSettings = settingsDoc.data();
@@ -45,6 +47,7 @@ const app = {
         } catch (error) {
             console.error("下載資料失敗，使用預設值:", error);
         }
+
         // 確保 systemSettings 有 adminPassword
         if (!this.systemSettings.adminPassword) {
             this.systemSettings.adminPassword = 'admin';
@@ -58,7 +61,122 @@ const app = {
         this.migrateToNumericClasses(); // 班級代碼轉移
         await this.saveState();        // 將轉移後的資料存回雲端
         this.updateAnnouncement();
-        this.renderSchedule();
+
+        // 啟動多使用者即時同步監聽
+        this.setupListeners();
+
+        // 嘗試還原登入狀態 (F5 重新整理保持登入)
+        this.restoreSession();
+
+        if (!this.mode) {
+            this.renderSchedule();
+        }
+    },
+
+    // 啟動 Firebase Firestore 即時同步監聽
+    setupListeners() {
+        // 1. 監聽選課資料
+        db.collection('system').doc('courses').onSnapshot((doc) => {
+            if (doc.exists) {
+                this.selectedCourses = doc.data() || {};
+                for (let key in this.selectedCourses) {
+                    if (!Array.isArray(this.selectedCourses[key])) {
+                        this.selectedCourses[key] = [];
+                    }
+                }
+                if (this.mode) {
+                    this.renderSchedule();
+                    if (this.mode === 'admin') {
+                        this.renderLoginStatusList();
+                    }
+                }
+            }
+        }, (error) => {
+            console.error("即時監聽選課資料失敗:", error);
+        });
+
+        // 2. 監聽系統設定
+        db.collection('system').doc('settings').onSnapshot((doc) => {
+            if (doc.exists) {
+                this.systemSettings = doc.data() || {};
+                if (!this.systemSettings.adminPassword) {
+                    this.systemSettings.adminPassword = 'admin';
+                }
+                this.updateAnnouncement();
+                if (this.mode === 'user') {
+                    this.updateUserOpenStatusUI();
+                    this.renderSchedule();
+                } else if (this.mode === 'admin') {
+                    const startInput = document.getElementById('admin-start-date');
+                    const endInput = document.getElementById('admin-end-date');
+                    if (startInput && endInput && document.activeElement !== startInput && document.activeElement !== endInput) {
+                        startInput.value = this.systemSettings.openStartDate || '';
+                        endInput.value = this.systemSettings.openEndDate || '';
+                    }
+                }
+            }
+        }, (error) => {
+            console.error("即時監聽系統設定失敗:", error);
+        });
+
+        // 3. 監聽使用者名單
+        db.collection('system').doc('users').onSnapshot((doc) => {
+            if (doc.exists) {
+                this.systemUsers = doc.data() || {};
+
+                // 若當前登入之一般使用者帳號被刪除，提醒並自動登出
+                if (this.mode === 'user' && this.currentUser && !this.systemUsers[this.currentUser]) {
+                    alert('您的帳號已被管理者刪除，系統將自動登出。');
+                    this.logout();
+                    return;
+                }
+
+                if (this.mode === 'admin') {
+                    this.renderUserList();
+                    this.renderLoginStatusList();
+                }
+            }
+        }, (error) => {
+            console.error("即時監聽使用者名單失敗:", error);
+        });
+    },
+
+    // 恢復登入狀態 (F5 重新整理時讀取 localStorage)
+    restoreSession() {
+        try {
+            const savedSession = localStorage.getItem('course_system_session');
+            if (!savedSession) return;
+            
+            const session = JSON.parse(savedSession);
+            if (session && session.mode && session.currentUser) {
+                if (session.mode === 'user') {
+                    if (this.systemUsers[session.currentUser]) {
+                        this.currentUser = session.currentUser;
+                        this.mode = 'user';
+                        
+                        // 初始化草稿：讀取此使用者已經確認過的課程
+                        this.draftSelections = [];
+                        for (const [courseId, users] of Object.entries(this.selectedCourses)) {
+                            if (users.includes(this.currentUser)) {
+                                this.draftSelections.push(courseId);
+                            }
+                        }
+
+                        this.activateAppView('user');
+                    } else {
+                        // 帳號已不存在，清除無效 Session
+                        localStorage.removeItem('course_system_session');
+                    }
+                } else if (session.mode === 'admin') {
+                    this.currentUser = 'Admin';
+                    this.mode = 'admin';
+                    this.activateAppView('admin');
+                }
+            }
+        } catch (error) {
+            console.error("還原登入狀態失敗:", error);
+            localStorage.removeItem('course_system_session');
+        }
     },
 
     // 資料移轉輔助函式
@@ -187,6 +305,22 @@ const app = {
         }
 
         this.mode = role;
+
+        // 儲存 Session 至 localStorage 以支援 F5 保持登入
+        try {
+            localStorage.setItem('course_system_session', JSON.stringify({
+                mode: role,
+                currentUser: this.currentUser
+            }));
+        } catch (e) {
+            console.warn("無法寫入 localStorage 進行 Session 保持:", e);
+        }
+
+        this.activateAppView(role);
+    },
+
+    // 切換至系統主視圖
+    activateAppView(role) {
         document.getElementById('login-screen').classList.remove('active');
         document.getElementById('app-screen').classList.add('active');
         
@@ -205,8 +339,12 @@ const app = {
             document.body.classList.add('admin-mode');
             
             // 載入目前設定
-            document.getElementById('admin-start-date').value = this.systemSettings.openStartDate;
-            document.getElementById('admin-end-date').value = this.systemSettings.openEndDate;
+            const startInput = document.getElementById('admin-start-date');
+            const endInput = document.getElementById('admin-end-date');
+            if (startInput && endInput) {
+                startInput.value = this.systemSettings.openStartDate || '';
+                endInput.value = this.systemSettings.openEndDate || '';
+            }
             this.renderUserList();
             this.renderLoginStatusList();
             this.switchAdminTab('tab-time');
@@ -231,27 +369,39 @@ const app = {
                 userControls.after(scheduleContainer);
             }
             
-            // 判斷是否在開放期間
-            const submitBtn = document.getElementById('submit-btn');
-            const instruction = document.getElementById('user-instruction');
-            if (this.isSystemOpen()) {
-                submitBtn.style.display = 'block';
-                userControls.classList.remove('readonly-mode');
-                instruction.innerHTML = `<strong>選課限制：</strong>每人限選 <span class="highlight">1</span> 節課。每個課程限額 <span class="highlight">2</span> 人。<br><small style="color: #666;">（請注意：選擇後必須點擊右方按鈕才能完成存檔）</small>`;
-            } else {
-                submitBtn.style.display = 'none';
-                userControls.classList.add('readonly-mode');
-                instruction.innerHTML = `<strong>注意：目前非開放選課期間。</strong><br><small>您僅能檢視目前的選課狀態，無法進行修改與存檔。</small>`;
-            }
+            this.updateUserOpenStatusUI();
         }
         
         this.renderSchedule();
+    },
+
+    // 更新使用者選課限制與狀態 UI
+    updateUserOpenStatusUI() {
+        const userControls = document.getElementById('user-controls');
+        const submitBtn = document.getElementById('submit-btn');
+        const instruction = document.getElementById('user-instruction');
+        if (!userControls || !submitBtn || !instruction) return;
+
+        if (this.isSystemOpen()) {
+            submitBtn.style.display = 'block';
+            userControls.classList.remove('readonly-mode');
+            instruction.innerHTML = `<strong>選課限制：</strong>每人限選 <span class="highlight">1</span> 節課。每個課程限額 <span class="highlight">2</span> 人。<br><small style="color: #666;">（請注意：選擇後必須點擊右方按鈕才能完成存檔）</small>`;
+        } else {
+            submitBtn.style.display = 'none';
+            userControls.classList.add('readonly-mode');
+            instruction.innerHTML = `<strong>注意：目前非開放選課期間。</strong><br><small>您僅能檢視目前的選課狀態，無法進行修改與存檔。</small>`;
+        }
     },
 
     logout() {
         this.mode = null;
         this.currentUser = null;
         this.draftSelections = [];
+        try {
+            localStorage.removeItem('course_system_session');
+        } catch (e) {
+            console.warn("無法清除 localStorage Session:", e);
+        }
         document.getElementById('class-input').value = '';
         if (document.getElementById('user-password-input')) document.getElementById('user-password-input').value = '';
         if (document.getElementById('admin-password-input')) document.getElementById('admin-password-input').value = '';
