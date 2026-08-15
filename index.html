@@ -69,6 +69,8 @@
                         <button class="tab-btn" onclick="app.switchAdminTab('tab-users')">帳號與密碼管理</button>
                         <button class="tab-btn" onclick="app.switchAdminTab('tab-status')">登入與選課狀況</button>
                         <button class="tab-btn" onclick="app.switchAdminTab('tab-schedule')">檢視全校課表</button>
+                        <button class="tab-btn" onclick="app.switchAdminTab('tab-user-logs')">特定使用者紀錄查詢</button>
+                        <button class="tab-btn" onclick="app.switchAdminTab('tab-range-logs')">時間區間數位軌跡</button>
                     </div>
 
                     <!-- 右側內容區塊 -->
@@ -160,7 +162,79 @@
                         <div id="tab-schedule" class="tab-pane" style="background: rgba(255,255,255,0.8); padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
                             <h3 style="margin-bottom: 15px; color: #333;">全校課表已被選課結果</h3>
                             <p style="margin-bottom: 15px; color: #666;">課表中顯示選課班級的名稱。</p>
-                            <!-- JS 動態將 schedule-container 移入這裡 -->
+                            <div class="schedule-container" id="main-schedule-container">
+                                <table class="schedule-table">
+                                    <thead>
+                                        <tr id="schedule-header">
+                                            <th class="time-col">節次</th>
+                                            <!-- 星期標題將由 JS 動態生成 -->
+                                        </tr>
+                                    </thead>
+                                    <tbody id="schedule-body">
+                                        <!-- 課表內容將由 JS 動態生成 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 分頁 5: 特定使用者紀錄查詢 -->
+                        <div id="tab-user-logs" class="tab-pane" style="background: rgba(255,255,255,0.8); padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                            <h3 style="margin-bottom: 10px; color: #333;">特定使用者登入與功能使用紀錄</h3>
+                            <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">請選擇班級帳號以查詢其數位操作歷程與選課紀錄。</p>
+                            
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 15px;">
+                                <label style="font-weight: bold;">選擇使用者：</label>
+                                <select id="query-user-select" class="form-input" style="min-width: 150px; border-radius: 8px; padding: 8px 12px; text-align: left;">
+                                    <option value="">-- 請選擇班級帳號 --</option>
+                                </select>
+                                <button class="btn btn-primary" style="padding: 8px 16px; font-size: 0.9em;" onclick="app.searchUserLogs()">查詢紀錄</button>
+                                <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.9em; background: #27ae60; color: white; border: none;" onclick="app.exportUserLogsExcel()">匯出 Excel 報表</button>
+                            </div>
+
+                            <div class="table-responsive" style="max-height: 450px; overflow-y: auto; background: white; border-radius: 8px; border: 1px solid #eee;">
+                                <table class="schedule-table" style="font-size: 0.9em; margin-bottom: 0;">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 170px;">時間</th>
+                                            <th style="width: 90px;">帳號</th>
+                                            <th style="width: 120px;">動作項目</th>
+                                            <th>詳細說明</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="user-logs-list-body">
+                                        <tr><td colspan="4" style="color: #888;">請選擇使用者並點擊「查詢紀錄」</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 分頁 6: 時間區間數位軌跡 -->
+                        <div id="tab-range-logs" class="tab-pane" style="background: rgba(255,255,255,0.8); padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                            <h3 style="margin-bottom: 10px; color: #333;">時間區間數位軌跡查詢</h3>
+                            <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">請設定開始與結束時間區間，查詢全校所有使用者之數位操作歷程。</p>
+                            
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 15px;">
+                                <label style="font-weight: bold;">開始時間：<input type="datetime-local" id="query-range-start" class="form-input date-input" style="padding: 6px 10px;"></label>
+                                <label style="font-weight: bold;">結束時間：<input type="datetime-local" id="query-range-end" class="form-input date-input" style="padding: 6px 10px;"></label>
+                                <button class="btn btn-primary" style="padding: 8px 16px; font-size: 0.9em;" onclick="app.searchTimeRangeLogs()">查詢軌跡</button>
+                                <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.9em; background: #27ae60; color: white; border: none;" onclick="app.exportTimeRangeLogsExcel()">匯出 Excel 報表</button>
+                            </div>
+
+                            <div class="table-responsive" style="max-height: 450px; overflow-y: auto; background: white; border-radius: 8px; border: 1px solid #eee;">
+                                <table class="schedule-table" style="font-size: 0.9em; margin-bottom: 0;">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 170px;">時間</th>
+                                            <th style="width: 90px;">帳號</th>
+                                            <th style="width: 120px;">動作項目</th>
+                                            <th>詳細說明</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="range-logs-list-body">
+                                        <tr><td colspan="4" style="color: #888;">請選擇時間區間並點擊「查詢軌跡」</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -172,25 +246,11 @@
                     <button id="submit-btn" class="btn btn-primary submit-btn" onclick="app.submitSelections()">確定送出選課</button>
                 </div>
             </div>
-
-            <div class="schedule-container" id="main-schedule-container">
-                <table class="schedule-table">
-                    <thead>
-                        <tr id="schedule-header">
-                            <th class="time-col">節次</th>
-                            <!-- 星期標題將由 JS 動態生成 -->
-                        </tr>
-                    </thead>
-                    <tbody id="schedule-body">
-                        <!-- 課表內容將由 JS 動態生成 -->
-                    </tbody>
-                </table>
-            </div>
         </div>
     </div>
 
     <img id="school-logo" src="校徽.png" alt="校徽" class="floating-logo">
 
-    <script src="app.js"></script>
+    <script src="app.js?v=3"></script>
 </body>
 </html>
