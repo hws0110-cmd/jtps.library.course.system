@@ -105,7 +105,7 @@ body {
 /* Login Screen */
 .login-card {
     text-align: center;
-    max-width: 450px;
+    max-width: 500px;
     width: 100%;
 }
 
@@ -120,18 +120,21 @@ body {
     background: #fff3cd;
     color: #856404;
     border: 1px solid #ffeeba;
-    padding: 15px;
+    padding: 15px 20px;
     border-radius: 10px;
     margin: 15px 0 25px 0;
     font-size: 1.05rem;
+    line-height: 1.6;
+    text-align: center;
 }
 
 .highlight-dates {
     display: inline-block;
-    margin-top: 5px;
+    margin-top: 6px;
     font-weight: bold;
-    font-size: 1.2em;
+    font-size: 1.15em;
     color: #e74c3c;
+    white-space: nowrap;
 }
 
 .subtitle {
@@ -170,10 +173,10 @@ body {
     border-color: var(--primary-color);
 }
 
-.date-input {
-    padding: 8px 15px;
+.date-input, .time-input {
+    padding: 8px 12px;
     font-size: 0.95rem;
-    margin-left: 10px;
+    margin-left: 5px;
     border-radius: 8px;
 }
 
