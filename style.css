@@ -397,10 +397,11 @@ body {
 }
 
 .noon-break td {
-    background: transparent !important;
+    background: rgba(44, 62, 80, 0.15) !important;
     font-weight: bold;
-    color: #7f8c8d;
-    padding: 5px !important;
+    color: #2c3e50;
+    padding: 8px !important;
+    border-radius: 8px;
 }
 
 @media (max-width: 768px) {
