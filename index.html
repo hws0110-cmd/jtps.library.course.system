@@ -25,7 +25,7 @@
             <h1>瑞塘國小<br>圖書館選課系統</h1>
             
             <div id="announcement-box" class="announcement-box">
-                <strong>公告：</strong> 本系統開放選課期間為<br>
+                <strong>公告：</strong>本系統開放選課期間為<br>
                 <span id="announcement-dates" class="highlight-dates">尚未設定</span>
             </div>
 
@@ -75,10 +75,20 @@
                     <div class="admin-content">
                         <!-- 分頁 1: 開放時間設定 -->
                         <div id="tab-time" class="tab-pane active" style="background: #fff3cd; color: #856404; padding: 15px; border-radius: 10px; border: 1px solid #ffeeba;">
-                            <p><strong>管理員模式：</strong>請設定系統開放選課的日期區間。</p>
+                            <p><strong>管理員模式：</strong>請設定系統開放選課的日期與時間區間（採用 24 小時制）。</p>
                             <div class="settings-group">
-                                <label>開放開始日期：<input type="date" id="admin-start-date" class="form-input date-input"></label>
-                                <label>開放結束日期：<input type="date" id="admin-end-date" class="form-input date-input"></label>
+                                <div style="display: flex; gap: 5px; align-items: center; flex-wrap: wrap;">
+                                    <label>開放開始：
+                                        <input type="date" id="admin-start-date" class="form-input date-input">
+                                        <input type="time" id="admin-start-time" class="form-input time-input" value="08:00">
+                                    </label>
+                                </div>
+                                <div style="display: flex; gap: 5px; align-items: center; flex-wrap: wrap;">
+                                    <label>開放結束：
+                                        <input type="date" id="admin-end-date" class="form-input date-input">
+                                        <input type="time" id="admin-end-time" class="form-input time-input" value="17:00">
+                                    </label>
+                                </div>
                                 <button class="btn btn-primary" onclick="app.saveSystemSettings()">儲存設定</button>
                             </div>
                         </div>
