@@ -21,6 +21,8 @@ const app = {
     systemSettings: { openStartDate: "", openEndDate: "", openStartTime: "", openEndTime: "", adminPassword: "admin" },
     systemUsers: {},
     draftSelections: [],
+    currentUserLogsData: [],
+    currentTimeRangeLogsData: [],
 
     // 星期定義
     weekdays: [
@@ -253,22 +255,41 @@ const app = {
     },
 
     isSystemOpen() {
-        if (!this.systemSettings.openStartDate || !this.systemSettings.openEndDate) {
-            return false;
-        }
-        const now = new Date();
-
-        const startTime = this.systemSettings.openStartTime || '00:00';
-        const endTime = this.systemSettings.openEndTime || '23:59';
-
-        const start = new Date(`${this.systemSettings.openStartDate}T${startTime}:00`);
-        const end = new Date(`${this.systemSettings.openEndDate}T${endTime}:59.999`);
-
-        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        if (!this.systemSettings || !this.systemSettings.openStartDate || !this.systemSettings.openEndDate) {
             return false;
         }
 
-        return now >= start && now <= end;
+        try {
+            const startClean = String(this.systemSettings.openStartDate).replace(/\//g, '-').trim();
+            const endClean = String(this.systemSettings.openEndDate).replace(/\//g, '-').trim();
+
+            const sParts = startClean.split('-').map(Number);
+            const eParts = endClean.split('-').map(Number);
+
+            if (sParts.length < 3 || eParts.length < 3 || sParts.some(isNaN) || eParts.some(isNaN)) {
+                return false;
+            }
+
+            const startTime = (this.systemSettings.openStartTime || '00:00').trim();
+            const endTime = (this.systemSettings.openEndTime || '23:59').trim();
+
+            const sTimeParts = startTime.split(':').map(Number);
+            const eTimeParts = endTime.split(':').map(Number);
+
+            const sHour = isNaN(sTimeParts[0]) ? 0 : sTimeParts[0];
+            const sMin = isNaN(sTimeParts[1]) ? 0 : sTimeParts[1];
+            const eHour = isNaN(eTimeParts[0]) ? 23 : eTimeParts[0];
+            const eMin = isNaN(eTimeParts[1]) ? 59 : eTimeParts[1];
+
+            const start = new Date(sParts[0], sParts[1] - 1, sParts[2], sHour, sMin, 0, 0);
+            const end = new Date(eParts[0], eParts[1] - 1, eParts[2], eHour, eMin, 59, 999);
+
+            const now = new Date();
+            return now >= start && now <= end;
+        } catch (e) {
+            console.error("isSystemOpen 判斷錯誤:", e);
+            return false;
+        }
     },
 
     login(role) {
@@ -303,6 +324,7 @@ const app = {
                     this.draftSelections.push(courseId);
                 }
             }
+            this.logActivity(className, '登入', '一般使用者成功登入系統');
         } else {
             const adminPasswordInput = document.getElementById('admin-password-input');
             const password = adminPasswordInput ? adminPasswordInput.value.trim() : '';
@@ -311,6 +333,7 @@ const app = {
                 return;
             }
             this.currentUser = 'Admin';
+            this.logActivity('Admin', '登入', '管理者成功登入系統');
         }
 
         this.mode = role;
@@ -330,6 +353,7 @@ const app = {
 
     // 切換至系統主視圖
     activateAppView(role) {
+        this.mode = role;
         document.getElementById('login-screen').classList.remove('active');
         document.getElementById('app-screen').classList.add('active');
         
@@ -337,6 +361,8 @@ const app = {
         const adminControls = document.getElementById('admin-controls');
         const userControls = document.getElementById('user-controls');
         const welcomeMessage = document.getElementById('welcome-message');
+        const scheduleContainer = document.getElementById('main-schedule-container');
+        const tabSchedule = document.getElementById('tab-schedule');
         
         welcomeMessage.textContent = `歡迎，${this.currentUser}`;
 
@@ -360,14 +386,13 @@ const app = {
             }
             this.renderUserList();
             this.renderLoginStatusList();
-            this.switchAdminTab('tab-time');
-            
-            // 將課表移到分頁 4
-            const scheduleContainer = document.getElementById('main-schedule-container');
-            const tabSchedule = document.getElementById('tab-schedule');
+
+            // 將課表移入管理者分頁 4 的卡片內部
             if (scheduleContainer && tabSchedule) {
                 tabSchedule.appendChild(scheduleContainer);
             }
+
+            this.switchAdminTab('tab-time');
             
         } else {
             badge.textContent = '一般使用者';
@@ -376,10 +401,10 @@ const app = {
             userControls.style.display = 'block';
             document.body.classList.remove('admin-mode');
             
-            // 將課表移回主畫面
-            const scheduleContainer = document.getElementById('main-schedule-container');
+            // 將課表移回一般使用者主畫面
             if (scheduleContainer && userControls) {
                 userControls.after(scheduleContainer);
+                scheduleContainer.style.display = 'block';
             }
             
             this.updateUserOpenStatusUI();
@@ -407,6 +432,9 @@ const app = {
     },
 
     logout() {
+        if (this.currentUser) {
+            this.logActivity(this.currentUser, '登出', '使用者登出系統');
+        }
         this.mode = null;
         this.currentUser = null;
         this.draftSelections = [];
@@ -420,6 +448,14 @@ const app = {
         if (document.getElementById('admin-password-input')) document.getElementById('admin-password-input').value = '';
         document.getElementById('app-screen').classList.remove('active');
         document.getElementById('login-screen').classList.add('active');
+
+        const scheduleContainer = document.getElementById('main-schedule-container');
+        const userControls = document.getElementById('user-controls');
+        if (scheduleContainer && userControls) {
+            userControls.after(scheduleContainer);
+            scheduleContainer.style.display = 'block';
+        }
+
         this.updateAnnouncement();
     },
 
@@ -448,6 +484,7 @@ const app = {
 
         this.systemUsers[className] = { password };
         this.saveState();
+        this.logActivity('Admin', '新增帳號', `新增班級帳號 [${className}]`);
         this.renderUserList();
         this.renderLoginStatusList();
         
@@ -474,6 +511,7 @@ const app = {
             
             delete this.systemUsers[className];
             this.saveState();
+            this.logActivity('Admin', '刪除帳號', `刪除班級帳號 [${className}] 及其所有選課紀錄`);
             this.renderUserList();
             this.renderLoginStatusList();
             this.renderSchedule(); // 重新渲染課表以反應變更
@@ -488,6 +526,7 @@ const app = {
                 }
             }
             this.saveState();
+            this.logActivity('Admin', '清除選課', `手動清除班級 [${className}] 的選課紀錄`);
             this.renderLoginStatusList();
             this.renderSchedule();
             alert('選課紀錄已清除！');
@@ -499,6 +538,7 @@ const app = {
             if (this.selectedCourses[courseId]) {
                 this.selectedCourses[courseId] = this.selectedCourses[courseId].filter(u => u !== className);
                 this.saveState();
+                this.logActivity('Admin', '移除單堂選課', `移除 [${className}] 在 ${this.formatCourseId(courseId)} 的選課紀錄`);
                 this.renderSchedule();
                 this.renderLoginStatusList();
             }
@@ -514,6 +554,24 @@ const app = {
         const panes = document.querySelectorAll('.tab-pane');
         panes.forEach(pane => pane.classList.remove('active'));
         document.getElementById(tabId).classList.add('active');
+
+        const scheduleContainer = document.getElementById('main-schedule-container');
+        const tabSchedule = document.getElementById('tab-schedule');
+        if (this.mode === 'admin' && scheduleContainer && tabSchedule) {
+            if (tabId === 'tab-schedule') {
+                tabSchedule.appendChild(scheduleContainer);
+                scheduleContainer.style.display = 'block';
+            } else {
+                scheduleContainer.style.display = 'none';
+            }
+        }
+
+        if (tabId === 'tab-user-logs') {
+            this.resetUserLogsView();
+            this.updateUserSelectDropdown();
+        } else if (tabId === 'tab-range-logs') {
+            this.resetTimeRangeLogsView();
+        }
     },
 
     changeUserPassword(className) {
@@ -526,6 +584,7 @@ const app = {
             }
             this.systemUsers[className].password = trimmedPassword;
             this.saveState();
+            this.logActivity('Admin', '修改使用者密碼', `修改班級 [${className}] 的登入密碼`);
             this.renderUserList();
             alert('密碼修改成功！');
         }
@@ -659,6 +718,7 @@ const app = {
         }
         this.systemSettings.adminPassword = trimmed;
         this.saveState();
+        this.logActivity('Admin', '修改管理者密碼', '管理者變更登入密碼成功');
         alert('管理者密碼修改成功！下次登入請使用新密碼。');
     },
 
@@ -716,6 +776,7 @@ const app = {
                 }
                 
                 this.saveState();
+                this.logActivity('Admin', '批次匯入帳號', `成功透過 Excel 批次匯入/更新 ${count} 筆帳號`);
                 this.renderUserList();
                 this.renderLoginStatusList();
                 
@@ -744,12 +805,21 @@ const app = {
             return;
         }
 
-        const startDt = new Date(`${start}T${startTime || '00:00'}:00`);
-        const endDt = new Date(`${end}T${endTime || '23:59'}:59`);
-        
-        if (startDt > endDt) {
-            alert("開始時間不能晚於結束時間！");
-            return;
+        try {
+            const [sY, sM, sD] = start.split('-').map(Number);
+            const [eY, eM, eD] = end.split('-').map(Number);
+            const [sH, sMin] = (startTime || '00:00').split(':').map(Number);
+            const [eH, eMin] = (endTime || '23:59').split(':').map(Number);
+
+            const startDt = new Date(sY, sM - 1, sD, sH || 0, sMin || 0, 0);
+            const endDt = new Date(eY, eM - 1, eD, eH || 23, eMin || 59, 59);
+
+            if (startDt > endDt) {
+                alert("開始時間不能晚於結束時間！");
+                return;
+            }
+        } catch (e) {
+            console.error("時間解析失敗:", e);
         }
 
         this.systemSettings.openStartDate = start;
@@ -757,6 +827,7 @@ const app = {
         this.systemSettings.openEndDate = end;
         this.systemSettings.openEndTime = endTime || '';
         this.saveState();
+        this.logActivity('Admin', '修改開放時間', `開放時間變更為 ${start} ${startTime || '00:00'} ~ ${end} ${endTime || '23:59'}`);
         alert("設定已儲存！");
     },
 
@@ -842,6 +913,9 @@ const app = {
 
                 transaction.set(coursesRef, currentServerCourses);
                 this.selectedCourses = currentServerCourses;
+
+                const selectedStr = this.draftSelections.map(id => this.formatCourseId(id)).join(', ');
+                this.logActivity(this.currentUser, '選課存檔', `成功儲存選課時段: ${selectedStr}`);
             });
 
             alert('選課存檔成功！');
@@ -998,6 +1072,260 @@ const app = {
             }
             bodyTbody.appendChild(tr);
         });
+    },
+
+    // 數位軌跡紀錄核心輔助函式
+    async logActivity(userId, action, details) {
+        try {
+            const now = new Date();
+            const logEntry = {
+                timestamp: now.getTime(),
+                timeString: now.toLocaleString('zh-TW', { hour12: false }),
+                userId: userId || 'Unknown',
+                action: action || '',
+                details: details || ''
+            };
+            await db.collection('logs').add(logEntry);
+        } catch (error) {
+            console.error("記錄數位軌跡失敗:", error);
+        }
+    },
+
+    formatCourseId(courseId) {
+        const periodMap = {
+            'm1': '早上第1節',
+            'm2': '早上第2節',
+            'm3': '早上第3節',
+            'm4': '早上第4節',
+            'a1': '下午第1節',
+            'a2': '下午第2節',
+            'a3': '下午第3節'
+        };
+        const dayMap = {
+            'mon': '星期一',
+            'tue': '星期二',
+            'wed': '星期三',
+            'thu': '星期四',
+            'fri': '星期五'
+        };
+        const parts = String(courseId).split('-');
+        if (parts.length < 2) return courseId;
+        return `${dayMap[parts[0]] || parts[0]} ${periodMap[parts[1]] || parts[1]}`;
+    },
+
+    resetUserLogsView() {
+        this.currentUserLogsData = [];
+        const select = document.getElementById('query-user-select');
+        if (select) select.value = '';
+        const tbody = document.getElementById('user-logs-list-body');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="4" style="color: #888;">請選擇使用者並點擊「查詢紀錄」</td></tr>';
+        }
+    },
+
+    resetTimeRangeLogsView() {
+        this.currentTimeRangeLogsData = [];
+        const startInput = document.getElementById('query-range-start');
+        const endInput = document.getElementById('query-range-end');
+        if (startInput && endInput) {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            startInput.value = `${year}-${month}-${day}T00:00`;
+            endInput.value = `${year}-${month}-${day}T23:59`;
+        }
+        const tbody = document.getElementById('range-logs-list-body');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="4" style="color: #888;">請選擇時間區間並點擊「查詢軌跡」</td></tr>';
+        }
+    },
+
+    updateUserSelectDropdown() {
+        const select = document.getElementById('query-user-select');
+        if (!select) return;
+        
+        const currentValue = select.value;
+        select.innerHTML = '<option value="">-- 請選擇班級帳號 --</option>';
+        
+        const adminOpt = document.createElement('option');
+        adminOpt.value = 'Admin';
+        adminOpt.textContent = 'Admin (管理者)';
+        select.appendChild(adminOpt);
+
+        const sortedNames = this.getSortedUserNames();
+        for (const name of sortedNames) {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = `${name} 班`;
+            select.appendChild(opt);
+        }
+
+        if (currentValue) {
+            select.value = currentValue;
+        }
+    },
+
+    async searchUserLogs() {
+        const select = document.getElementById('query-user-select');
+        const targetUser = select ? select.value.trim() : '';
+        if (!targetUser) {
+            alert('請先選擇要查詢的班級或管理者帳號！');
+            return;
+        }
+
+        const tbody = document.getElementById('user-logs-list-body');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="4" style="color: #666;">載入中...</td></tr>';
+        }
+
+        try {
+            const snapshot = await db.collection('logs').get();
+            let logs = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.userId === targetUser) {
+                    logs.push(data);
+                }
+            });
+
+            logs.sort((a, b) => b.timestamp - a.timestamp);
+            this.currentUserLogsData = logs;
+
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            if (logs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" style="color: #888;">查無「${targetUser}」的數位軌跡紀錄</td></tr>`;
+                return;
+            }
+
+            logs.forEach(log => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${log.timeString || '-'}</td>
+                    <td><span class="user-tag" style="background:#34495e;">${log.userId}</span></td>
+                    <td style="font-weight:bold; color:#2980b9;">${log.action || '-'}</td>
+                    <td style="text-align:left;">${log.details || '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (error) {
+            console.error("查詢使用者軌跡失敗:", error);
+            alert("查詢失敗，請檢查網路連線！");
+        }
+    },
+
+    exportUserLogsExcel() {
+        const select = document.getElementById('query-user-select');
+        const targetUser = select ? select.value.trim() : '';
+        if (!targetUser || this.currentUserLogsData.length === 0) {
+            alert('目前沒有可匯出的查詢結果紀錄，請先選擇帳號並點擊「查詢紀錄」！');
+            return;
+        }
+
+        if (typeof XLSX === 'undefined') {
+            alert('系統尚未載入 SheetJS，請確認網路連線！');
+            return;
+        }
+
+        const excelData = this.currentUserLogsData.map(item => ({
+            "時間": item.timeString || '',
+            "帳號/班級": item.userId || '',
+            "動作項目": item.action || '',
+            "詳細說明": item.details || ''
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(excelData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "使用者數位軌跡");
+        XLSX.writeFile(wb, `使用者[${targetUser}]_數位軌跡紀錄.xlsx`);
+    },
+
+    async searchTimeRangeLogs() {
+        const startInput = document.getElementById('query-range-start');
+        const endInput = document.getElementById('query-range-end');
+        
+        if (!startInput || !endInput || !startInput.value || !endInput.value) {
+            alert('請完整選擇查詢的開始與結束時間！');
+            return;
+        }
+
+        const startMs = new Date(startInput.value).getTime();
+        const endMs = new Date(endInput.value).getTime();
+
+        if (startMs > endMs) {
+            alert('開始時間不能晚於結束時間！');
+            return;
+        }
+
+        const tbody = document.getElementById('range-logs-list-body');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="4" style="color: #666;">載入中...</td></tr>';
+        }
+
+        try {
+            const snapshot = await db.collection('logs').get();
+            let logs = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.timestamp >= startMs && data.timestamp <= endMs) {
+                    logs.push(data);
+                }
+            });
+
+            logs.sort((a, b) => b.timestamp - a.timestamp);
+            this.currentTimeRangeLogsData = logs;
+
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            if (logs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" style="color: #888;">此時間區間內查無數位軌跡紀錄</td></tr>`;
+                return;
+            }
+
+            logs.forEach(log => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${log.timeString || '-'}</td>
+                    <td><span class="user-tag" style="background:#34495e;">${log.userId}</span></td>
+                    <td style="font-weight:bold; color:#2980b9;">${log.action || '-'}</td>
+                    <td style="text-align:left;">${log.details || '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (error) {
+            console.error("查詢時間區間軌跡失敗:", error);
+            alert("查詢失敗，請檢查網路連線！");
+        }
+    },
+
+    exportTimeRangeLogsExcel() {
+        if (this.currentTimeRangeLogsData.length === 0) {
+            alert('目前沒有可匯出的查詢結果紀錄，請先設定時間區間並點擊「查詢軌跡」！');
+            return;
+        }
+
+        if (typeof XLSX === 'undefined') {
+            alert('系統尚未載入 SheetJS，請確認網路連線！');
+            return;
+        }
+
+        const startVal = document.getElementById('query-range-start').value.replace('T', ' ');
+        const endVal = document.getElementById('query-range-end').value.replace('T', ' ');
+
+        const excelData = this.currentTimeRangeLogsData.map(item => ({
+            "時間": item.timeString || '',
+            "帳號/班級": item.userId || '',
+            "動作項目": item.action || '',
+            "詳細說明": item.details || ''
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(excelData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "時間區間數位軌跡");
+        XLSX.writeFile(wb, `數位軌跡紀錄_${startVal}至${endVal}.xlsx`);
     }
 };
 
