@@ -18,7 +18,7 @@ const app = {
     
 	// 改為預設空值，從雲端下載
     selectedCourses: {},
-    systemSettings: { openStartDate: "", openEndDate: "", adminPassword: "admin" },
+    systemSettings: { openStartDate: "", openEndDate: "", openStartTime: "", openEndTime: "", adminPassword: "admin" },
     systemUsers: {},
     draftSelections: [],
 
@@ -108,10 +108,14 @@ const app = {
                     this.renderSchedule();
                 } else if (this.mode === 'admin') {
                     const startInput = document.getElementById('admin-start-date');
+                    const startTimeInput = document.getElementById('admin-start-time');
                     const endInput = document.getElementById('admin-end-date');
-                    if (startInput && endInput && document.activeElement !== startInput && document.activeElement !== endInput) {
+                    const endTimeInput = document.getElementById('admin-end-time');
+                    if (startInput && endInput && document.activeElement !== startInput && document.activeElement !== endInput && document.activeElement !== startTimeInput && document.activeElement !== endTimeInput) {
                         startInput.value = this.systemSettings.openStartDate || '';
+                        if (startTimeInput) startTimeInput.value = this.systemSettings.openStartTime || '08:00';
                         endInput.value = this.systemSettings.openEndDate || '';
+                        if (endTimeInput) endTimeInput.value = this.systemSettings.openEndTime || '17:00';
                     }
                 }
             }
@@ -240,7 +244,9 @@ const app = {
     updateAnnouncement() {
         const annDates = document.getElementById('announcement-dates');
         if (this.systemSettings.openStartDate && this.systemSettings.openEndDate) {
-            annDates.textContent = `${this.systemSettings.openStartDate} ~ ${this.systemSettings.openEndDate}`;
+            const startTimeStr = this.systemSettings.openStartTime ? ` ${this.systemSettings.openStartTime}` : '';
+            const endTimeStr = this.systemSettings.openEndTime ? ` ${this.systemSettings.openEndTime}` : '';
+            annDates.textContent = `${this.systemSettings.openStartDate}${startTimeStr} ~ ${this.systemSettings.openEndDate}${endTimeStr}`;
         } else {
             annDates.textContent = '尚未設定';
         }
@@ -250,16 +256,19 @@ const app = {
         if (!this.systemSettings.openStartDate || !this.systemSettings.openEndDate) {
             return false;
         }
-        const today = new Date();
-        // 將時間歸零以進行單純的日期比較
-        today.setHours(0, 0, 0, 0);
-        
-        const start = new Date(this.systemSettings.openStartDate);
-        start.setHours(0,0,0,0);
-        const end = new Date(this.systemSettings.openEndDate);
-        end.setHours(23,59,59,999);
+        const now = new Date();
 
-        return today >= start && today <= end;
+        const startTime = this.systemSettings.openStartTime || '00:00';
+        const endTime = this.systemSettings.openEndTime || '23:59';
+
+        const start = new Date(`${this.systemSettings.openStartDate}T${startTime}:00`);
+        const end = new Date(`${this.systemSettings.openEndDate}T${endTime}:59.999`);
+
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+            return false;
+        }
+
+        return now >= start && now <= end;
     },
 
     login(role) {
@@ -340,10 +349,14 @@ const app = {
             
             // 載入目前設定
             const startInput = document.getElementById('admin-start-date');
+            const startTimeInput = document.getElementById('admin-start-time');
             const endInput = document.getElementById('admin-end-date');
+            const endTimeInput = document.getElementById('admin-end-time');
             if (startInput && endInput) {
                 startInput.value = this.systemSettings.openStartDate || '';
+                if (startTimeInput) startTimeInput.value = this.systemSettings.openStartTime || '08:00';
                 endInput.value = this.systemSettings.openEndDate || '';
+                if (endTimeInput) endTimeInput.value = this.systemSettings.openEndTime || '17:00';
             }
             this.renderUserList();
             this.renderLoginStatusList();
@@ -722,19 +735,27 @@ const app = {
 
     saveSystemSettings() {
         const start = document.getElementById('admin-start-date').value;
+        const startTime = document.getElementById('admin-start-time').value;
         const end = document.getElementById('admin-end-date').value;
+        const endTime = document.getElementById('admin-end-time').value;
         
         if (!start || !end) {
             alert("請選擇完整的開始與結束日期！");
             return;
         }
-        if (new Date(start) > new Date(end)) {
-            alert("開始日期不能晚於結束日期！");
+
+        const startDt = new Date(`${start}T${startTime || '00:00'}:00`);
+        const endDt = new Date(`${end}T${endTime || '23:59'}:59`);
+        
+        if (startDt > endDt) {
+            alert("開始時間不能晚於結束時間！");
             return;
         }
 
         this.systemSettings.openStartDate = start;
+        this.systemSettings.openStartTime = startTime || '';
         this.systemSettings.openEndDate = end;
+        this.systemSettings.openEndTime = endTime || '';
         this.saveState();
         alert("設定已儲存！");
     },
@@ -776,7 +797,7 @@ const app = {
         this.renderSchedule();
     },
 
-    submitSelections() {
+    async submitSelections() {
         if (!this.isSystemOpen()) {
             alert('非選課期間，無法送出！');
             return;
@@ -787,22 +808,62 @@ const app = {
             return;
         }
 
-        // 清除該使用者所有舊的選課紀錄
-        for (let key in this.selectedCourses) {
-            this.selectedCourses[key] = this.selectedCourses[key].filter(u => u !== this.currentUser);
-        }
+        try {
+            // 使用 Firestore Transaction (事務處理) 讀取與驗證最新狀態，防範多人同時存檔造成的競爭與超額情況
+            await db.runTransaction(async (transaction) => {
+                const coursesRef = db.collection('system').doc('courses');
+                const doc = await transaction.get(coursesRef);
+                const currentServerCourses = doc.exists ? doc.data() : {};
 
-        // 將草稿寫入正式紀錄
-        for (const courseId of this.draftSelections) {
-            if (!this.selectedCourses[courseId]) {
-                this.selectedCourses[courseId] = [];
+                // 驗證草稿中選取的每一個課程時段是否在最新雲端資料中已額滿 (≥ 2 人)
+                for (const courseId of this.draftSelections) {
+                    const enrolledUsers = (currentServerCourses[courseId] || []).filter(u => u !== this.currentUser);
+                    if (enrolledUsers.length >= 2) {
+                        throw new Error("COURSE_FULL");
+                    }
+                }
+
+                // 清除該使用者所有舊的選課紀錄
+                for (let key in currentServerCourses) {
+                    if (Array.isArray(currentServerCourses[key])) {
+                        currentServerCourses[key] = currentServerCourses[key].filter(u => u !== this.currentUser);
+                    }
+                }
+
+                // 將草稿寫入最新正式紀錄
+                for (const courseId of this.draftSelections) {
+                    if (!Array.isArray(currentServerCourses[courseId])) {
+                        currentServerCourses[courseId] = [];
+                    }
+                    if (!currentServerCourses[courseId].includes(this.currentUser)) {
+                        currentServerCourses[courseId].push(this.currentUser);
+                    }
+                }
+
+                transaction.set(coursesRef, currentServerCourses);
+                this.selectedCourses = currentServerCourses;
+            });
+
+            alert('選課存檔成功！');
+            this.renderSchedule();
+        } catch (error) {
+            if (error.message === "COURSE_FULL") {
+                // 從雲端重新讀取最新課表
+                try {
+                    const doc = await db.collection('system').doc('courses').get();
+                    if (doc.exists) {
+                        this.selectedCourses = doc.data() || {};
+                    }
+                } catch (e) {
+                    console.error("重新獲取選課資料失敗:", e);
+                }
+                alert("該課程時段已額滿，請選擇其他時段。");
+                this.renderSchedule();
+            } else {
+                console.error("存檔失敗:", error);
+                alert("選課存檔失敗，請檢查網路連線或稍後再試！");
             }
-            this.selectedCourses[courseId].push(this.currentUser);
         }
-
-        this.saveState();
-        alert('選課存檔成功！');
-        this.renderSchedule();
     },
 
     renderSchedule() {
