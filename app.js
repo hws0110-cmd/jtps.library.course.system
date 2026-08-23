@@ -482,7 +482,8 @@ const app = {
             return;
         }
 
-        this.systemUsers[className] = { password };
+        const existing = typeof this.systemUsers[className] === 'object' ? this.systemUsers[className] : {};
+        this.systemUsers[className] = { ...existing, password };
         this.saveState();
         this.logActivity('Admin', '新增帳號', `新增班級帳號 [${className}]`);
         this.renderUserList();
@@ -618,15 +619,23 @@ const app = {
                 alert('密碼不能為空白！');
                 return;
             }
-            this.systemUsers[className].password = trimmedPassword;
-            this.saveState();
-            this.logActivity('Admin', '修改使用者密碼', `修改班級 [${className}] 的登入密碼`);
-            this.renderUserList();
-            alert('密碼修改成功！');
+        if (typeof this.systemUsers[className] === 'string') {
+            this.systemUsers[className] = { password: trimmedPassword };
+        } else {
+            this.systemUsers[className] = {
+                ...this.systemUsers[className],
+                password: trimmedPassword
+            };
+        }
+        this.saveState();
+        this.logActivity('Admin', '修改使用者密碼', `修改班級 [${className}] 的登入密碼`);
+        this.renderUserList();
+        this.renderLoginStatusList();
+        alert('密碼修改成功！');
         }
     },
 
-    renderLoginStatusList() {
+    async renderLoginStatusList() {
         const tbody = document.getElementById('status-list-body');
         if (!tbody) return;
         tbody.innerHTML = '';
@@ -639,15 +648,56 @@ const app = {
 
         const sortedClassNames = this.getSortedUserNames();
 
+        // 檢查是否有使用者欠缺 lastLoginTime，若有則非同步從 logs 集合中備援載入最新登入時間
+        let recentLogsMap = {};
+        const missingLogins = sortedClassNames.some(name => {
+            const data = this.systemUsers[name];
+            return !data || (typeof data === 'object' && !data.lastLoginTime);
+        });
+
+        if (missingLogins) {
+            try {
+                const snapshot = await db.collection('logs').get();
+                snapshot.forEach(doc => {
+                    const logData = doc.data();
+                    if (logData.userId && logData.action === '登入') {
+                        const existing = recentLogsMap[logData.userId];
+                        if (!existing || (logData.timestamp && logData.timestamp > existing.timestamp)) {
+                            recentLogsMap[logData.userId] = logData;
+                        }
+                    }
+                });
+            } catch (e) {
+                console.warn("備援讀取登入紀錄失敗:", e);
+            }
+        }
+
+        let stateNeedsSave = false;
+
         for (const className of sortedClassNames) {
-            const data = this.systemUsers[className];
+            let data = this.systemUsers[className];
+            if (typeof data === 'string') {
+                data = { password: data };
+                this.systemUsers[className] = data;
+            }
+
+            let displayLoginTime = (data && data.lastLoginTime) ? data.lastLoginTime : null;
+
+            if (!displayLoginTime && recentLogsMap[className]) {
+                displayLoginTime = recentLogsMap[className].timeString;
+                if (this.systemUsers[className] && typeof this.systemUsers[className] === 'object') {
+                    this.systemUsers[className].lastLoginTime = displayLoginTime;
+                    stateNeedsSave = true;
+                }
+            }
+
             const tr = document.createElement('tr');
             
             const tdClass = document.createElement('td');
             tdClass.textContent = className;
             
             const tdLastLogin = document.createElement('td');
-            tdLastLogin.textContent = data.lastLoginTime || '從未登入';
+            tdLastLogin.textContent = displayLoginTime || '從未登入';
             
             const tdStatus = document.createElement('td');
             const hasSelected = allSelectedUsers.has(className);
@@ -681,6 +731,10 @@ const app = {
             tr.appendChild(tdAction);
             
             tbody.appendChild(tr);
+        }
+
+        if (stateNeedsSave) {
+            this.saveState();
         }
     },
 
@@ -803,7 +857,8 @@ const app = {
                     
                     if (className && password) {
                         if (classRegex.test(className)) {
-                            this.systemUsers[className] = { password };
+                            const existing = typeof this.systemUsers[className] === 'object' ? this.systemUsers[className] : {};
+                            this.systemUsers[className] = { ...existing, password };
                             count++;
                         } else {
                             skipCount++;
