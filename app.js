@@ -566,11 +566,47 @@ const app = {
             }
         }
 
-        if (tabId === 'tab-user-logs') {
+        if (tabId === 'tab-analytics') {
+            const activeSubTab = this.currentAnalyticsSubTab || 'subtab-user-logs';
+            this.switchAnalyticsSubTab(activeSubTab);
+        }
+    },
+
+    switchAnalyticsSubTab(subTabId) {
+        this.currentAnalyticsSubTab = subTabId;
+        const btns = document.querySelectorAll('.sub-tab-btn');
+        btns.forEach(btn => btn.classList.remove('active'));
+        const activeBtn = Array.from(btns).find(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes(subTabId));
+        if (activeBtn) activeBtn.classList.add('active');
+
+        const panes = document.querySelectorAll('.subtab-pane');
+        panes.forEach(pane => pane.style.display = 'none');
+        const activePane = document.getElementById(subTabId);
+        if (activePane) activePane.style.display = 'block';
+
+        if (subTabId === 'subtab-user-logs') {
             this.resetUserLogsView();
             this.updateUserSelectDropdown();
-        } else if (tabId === 'tab-range-logs') {
+        } else if (subTabId === 'subtab-range-logs') {
             this.resetTimeRangeLogsView();
+        } else if (subTabId === 'subtab-heatmap') {
+            if (!document.getElementById('heatmap-start').value) {
+                this.setFilterPreset('heatmap', '7days');
+            } else {
+                this.loadHeatmapData();
+            }
+        } else if (subTabId === 'subtab-line-chart') {
+            if (!document.getElementById('line-chart-start').value) {
+                this.setFilterPreset('line-chart', '7days');
+            } else {
+                this.loadLineChartData();
+            }
+        } else if (subTabId === 'subtab-peak-stats') {
+            if (!document.getElementById('peak-stats-start').value) {
+                this.setFilterPreset('peak-stats', '7days');
+            } else {
+                this.loadPeakStatsData();
+            }
         }
     },
 
@@ -1326,6 +1362,286 @@ const app = {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "時間區間數位軌跡");
         XLSX.writeFile(wb, `數位軌跡紀錄_${startVal}至${endVal}.xlsx`);
+    },
+
+    setFilterPreset(target, presetType) {
+        const startInput = document.getElementById(`${target}-start`);
+        const endInput = document.getElementById(`${target}-end`);
+        if (!startInput || !endInput) return;
+
+        const now = new Date();
+        const endStr = this.formatDateTimeLocal(now);
+
+        let start = new Date();
+        if (presetType === 'today') {
+            start.setHours(0, 0, 0, 0);
+        } else if (presetType === '7days') {
+            start.setDate(now.getDate() - 7);
+            start.setHours(0, 0, 0, 0);
+        } else if (presetType === '30days') {
+            start.setDate(now.getDate() - 30);
+            start.setHours(0, 0, 0, 0);
+        }
+        const startStr = this.formatDateTimeLocal(start);
+
+        startInput.value = startStr;
+        endInput.value = endStr;
+
+        if (target === 'heatmap') this.loadHeatmapData();
+        else if (target === 'line-chart') this.loadLineChartData();
+        else if (target === 'peak-stats') this.loadPeakStatsData();
+    },
+
+    formatDateTimeLocal(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    },
+
+    async fetchLogsForRange(startInputId, endInputId) {
+        const startInput = document.getElementById(startInputId);
+        const endInput = document.getElementById(endInputId);
+
+        if (!startInput || !endInput || !startInput.value || !endInput.value) {
+            alert('請選擇完整的開始與結束時間！');
+            return null;
+        }
+
+        const startMs = new Date(startInput.value).getTime();
+        const endMs = new Date(endInput.value).getTime();
+
+        if (startMs > endMs) {
+            alert('開始時間不能晚於結束時間！');
+            return null;
+        }
+
+        try {
+            const snapshot = await db.collection('logs').get();
+            let logs = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.timestamp >= startMs && data.timestamp <= endMs) {
+                    logs.push(data);
+                }
+            });
+            return { logs, startMs, endMs };
+        } catch (error) {
+            console.error("獲取分析紀錄失敗:", error);
+            alert("獲取資料失敗，請檢查網路連線！");
+            return null;
+        }
+    },
+
+    async loadHeatmapData() {
+        const result = await this.fetchLogsForRange('heatmap-start', 'heatmap-end');
+        if (!result) return;
+        const { logs } = result;
+
+        const container = document.getElementById('heatmap-grid-container');
+        const legend = document.getElementById('heatmap-legend');
+        if (!container) return;
+
+        // 建立 7 (星期一~日) x 24 (小時) 矩陣
+        const dayNames = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
+        const matrix = Array.from({ length: 7 }, () => Array(24).fill(0));
+
+        logs.forEach(log => {
+            const dt = new Date(log.timestamp);
+            let day = dt.getDay(); // 0 = Sun, 1 = Mon, ...
+            const dayIdx = (day === 0) ? 6 : day - 1; // 轉為 0 = Mon, 6 = Sun
+            const hour = dt.getHours();
+            matrix[dayIdx][hour]++;
+        });
+
+        let html = '<table class="heatmap-table"><thead><tr><th style="width:75px;">星期 \\ 時段</th>';
+        for (let h = 0; h < 24; h++) {
+            html += `<th>${String(h).padStart(2, '0')}:00</th>`;
+        }
+        html += '</tr></thead><tbody>';
+
+        for (let d = 0; d < 7; d++) {
+            html += `<tr><th>${dayNames[d]}</th>`;
+            for (let h = 0; h < 24; h++) {
+                const count = matrix[d][h];
+                let level = 'level-0';
+                if (count >= 10) level = 'level-4';
+                else if (count >= 6) level = 'level-3';
+                else if (count >= 3) level = 'level-2';
+                else if (count >= 1) level = 'level-1';
+
+                html += `<td class="${level}" title="${dayNames[d]} ${String(h).padStart(2, '0')}:00 - 累積 ${count} 次登入與操作">${count}</td>`;
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+
+        container.innerHTML = html;
+        if (legend) legend.style.display = 'flex';
+    },
+
+    async loadLineChartData() {
+        const result = await this.fetchLogsForRange('line-chart-start', 'line-chart-end');
+        if (!result) return;
+        const { logs, startMs, endMs } = result;
+
+        const granularity = document.getElementById('line-chart-granularity').value;
+        const diffDays = (endMs - startMs) / (1000 * 3600 * 24);
+
+        let byDay = (granularity === 'day') || (granularity === 'auto' && diffDays > 3);
+
+        const countsMap = {};
+
+        function pad2(n) { return String(n).padStart(2, '0'); }
+
+        logs.forEach(log => {
+            const dt = new Date(log.timestamp);
+            let key = '';
+            if (byDay) {
+                key = `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+            } else {
+                key = `${pad2(dt.getMonth() + 1)}/${pad2(dt.getDate())} ${pad2(dt.getHours())}:00`;
+            }
+            countsMap[key] = (countsMap[key] || 0) + 1;
+        });
+
+        const labels = Object.keys(countsMap);
+        const dataValues = Object.values(countsMap);
+
+        const ctx = document.getElementById('loginLineChartCanvas');
+        if (!ctx) return;
+
+        if (typeof Chart === 'undefined') {
+            alert('Chart.js 未成功載入，請確認網路連線！');
+            return;
+        }
+
+        if (this.lineChartInstance) {
+            this.lineChartInstance.destroy();
+        }
+
+        this.lineChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels.length > 0 ? labels : ['無資料'],
+                datasets: [{
+                    label: byDay ? '每日活躍人次' : '每小時活躍人次',
+                    data: dataValues.length > 0 ? dataValues : [0],
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.15)',
+                    fill: true,
+                    tension: 0.35,
+                    borderWidth: 3,
+                    pointRadius: 5,
+                    pointHoverRadius: 8,
+                    pointBackgroundColor: '#2980b9'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    y: { beginAtZero: true, ticks: { precision: 0 } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    },
+
+    async loadPeakStatsData() {
+        const result = await this.fetchLogsForRange('peak-stats-start', 'peak-stats-end');
+        if (!result) return;
+        const { logs } = result;
+
+        const hourlyCounts = Array(24).fill(0);
+        logs.forEach(log => {
+            const dt = new Date(log.timestamp);
+            hourlyCounts[dt.getHours()]++;
+        });
+
+        let peakHour = 0, peakCount = -1;
+        let offpeakHour = 0, offpeakCount = Infinity;
+
+        hourlyCounts.forEach((count, h) => {
+            if (count > peakCount) {
+                peakCount = count;
+                peakHour = h;
+            }
+            if (count < offpeakCount) {
+                offpeakCount = count;
+                offpeakHour = h;
+            }
+        });
+
+        if (offpeakCount === Infinity) offpeakCount = 0;
+
+        const totalLogins = logs.length;
+        const avgLogins = (totalLogins / 24).toFixed(1);
+
+        document.getElementById('kpi-peak-time').textContent = `${String(peakHour).padStart(2, '0')}:00 - ${String((peakHour + 1) % 24).padStart(2, '0')}:00`;
+        document.getElementById('kpi-peak-count').textContent = `共 ${peakCount} 人次登入`;
+
+        document.getElementById('kpi-offpeak-time').textContent = `${String(offpeakHour).padStart(2, '0')}:00 - ${String((offpeakHour + 1) % 24).padStart(2, '0')}:00`;
+        document.getElementById('kpi-offpeak-count').textContent = `共 ${offpeakCount} 人次登入`;
+
+        document.getElementById('kpi-total-logins').textContent = totalLogins;
+        document.getElementById('kpi-avg-logins').textContent = avgLogins;
+
+        const ctx = document.getElementById('peakStatsChartCanvas');
+        if (!ctx) return;
+
+        if (typeof Chart === 'undefined') return;
+
+        if (this.peakStatsChartInstance) {
+            this.peakStatsChartInstance.destroy();
+        }
+
+        const labels = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
+        const bgColors = hourlyCounts.map((_, i) => {
+            if (i === peakHour && peakCount > 0) return '#ef4444'; // 尖峰紅
+            if (i === offpeakHour) return '#94a3b8'; // 離峰灰藍
+            return '#38bdf8'; // 一般藍
+        });
+
+        this.peakStatsChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '各時段累積登入與操作人次',
+                    data: hourlyCounts,
+                    backgroundColor: bgColors,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = `登入人次: ${context.parsed.y}`;
+                                if (context.dataIndex === peakHour && peakCount > 0) label += ' (🔥 尖峰時段)';
+                                if (context.dataIndex === offpeakHour) label += ' (❄️ 離峰時段)';
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: { beginAtZero: true, ticks: { precision: 0 } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
     }
 };
 
