@@ -7,6 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <!-- 引入 Firebase 核心與 Firestore 資料庫程式庫 (經典相容版) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
@@ -69,8 +70,7 @@
                         <button class="tab-btn" onclick="app.switchAdminTab('tab-users')">帳號與密碼管理</button>
                         <button class="tab-btn" onclick="app.switchAdminTab('tab-status')">登入與選課狀況</button>
                         <button class="tab-btn" onclick="app.switchAdminTab('tab-schedule')">檢視全校課表</button>
-                        <button class="tab-btn" onclick="app.switchAdminTab('tab-user-logs')">特定使用者紀錄查詢</button>
-                        <button class="tab-btn" onclick="app.switchAdminTab('tab-range-logs')">時間區間數位軌跡</button>
+                        <button class="tab-btn" onclick="app.switchAdminTab('tab-analytics')">統計報表與洞察</button>
                     </div>
 
                     <!-- 右側內容區塊 -->
@@ -177,63 +177,185 @@
                             </div>
                         </div>
 
-                        <!-- 分頁 5: 特定使用者紀錄查詢 -->
-                        <div id="tab-user-logs" class="tab-pane" style="background: rgba(255,255,255,0.8); padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-                            <h3 style="margin-bottom: 10px; color: #333;">特定使用者登入與功能使用紀錄</h3>
-                            <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">請選擇班級帳號以查詢其數位操作歷程與選課紀錄。</p>
-                            
-                            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 15px;">
-                                <label style="font-weight: bold;">選擇使用者：</label>
-                                <select id="query-user-select" class="form-input" style="min-width: 150px; border-radius: 8px; padding: 8px 12px; text-align: left;">
-                                    <option value="">-- 請選擇班級帳號 --</option>
-                                </select>
-                                <button class="btn btn-primary" style="padding: 8px 16px; font-size: 0.9em;" onclick="app.searchUserLogs()">查詢紀錄</button>
-                                <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.9em; background: #27ae60; color: white; border: none;" onclick="app.exportUserLogsExcel()">匯出 Excel 報表</button>
+                        <!-- 分頁 5: 統計報表與洞察 -->
+                        <div id="tab-analytics" class="tab-pane" style="background: rgba(255,255,255,0.8); padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                            <!-- 次頁籤導覽列 -->
+                            <div class="sub-tab-nav">
+                                <button class="sub-tab-btn active" onclick="app.switchAnalyticsSubTab('subtab-user-logs')">特定使用者紀錄查詢</button>
+                                <button class="sub-tab-btn" onclick="app.switchAnalyticsSubTab('subtab-range-logs')">時間區間數位軌跡</button>
+                                <button class="sub-tab-btn" onclick="app.switchAnalyticsSubTab('subtab-heatmap')">上線時段 Heatmap</button>
+                                <button class="sub-tab-btn" onclick="app.switchAnalyticsSubTab('subtab-line-chart')">登入人次折線圖</button>
+                                <button class="sub-tab-btn" onclick="app.switchAnalyticsSubTab('subtab-peak-stats')">登入尖峰與離峰統計圖</button>
                             </div>
 
-                            <div class="table-responsive" style="max-height: 450px; overflow-y: auto; background: white; border-radius: 8px; border: 1px solid #eee;">
-                                <table class="schedule-table" style="font-size: 0.9em; margin-bottom: 0;">
-                                    <thead>
-                                        <tr>
-                                            <th style="width: 170px;">時間</th>
-                                            <th style="width: 90px;">帳號</th>
-                                            <th style="width: 120px;">動作項目</th>
-                                            <th>詳細說明</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="user-logs-list-body">
-                                        <tr><td colspan="4" style="color: #888;">請選擇使用者並點擊「查詢紀錄」</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                            <!-- 次頁籤 1: 特定使用者紀錄查詢 -->
+                            <div id="subtab-user-logs" class="subtab-pane active">
+                                <h3 style="margin-bottom: 10px; color: #333;">特定使用者登入與功能使用紀錄</h3>
+                                <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">請選擇班級帳號以查詢其數位操作歷程與選課紀錄。</p>
+                                
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 15px;">
+                                    <label style="font-weight: bold;">選擇使用者：</label>
+                                    <select id="query-user-select" class="form-input" style="min-width: 150px; border-radius: 8px; padding: 8px 12px; text-align: left;">
+                                        <option value="">-- 請選擇班級帳號 --</option>
+                                    </select>
+                                    <button class="btn btn-primary" style="padding: 8px 16px; font-size: 0.9em;" onclick="app.searchUserLogs()">查詢紀錄</button>
+                                    <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.9em; background: #27ae60; color: white; border: none;" onclick="app.exportUserLogsExcel()">匯出 Excel 報表</button>
+                                </div>
 
-                        <!-- 分頁 6: 時間區間數位軌跡 -->
-                        <div id="tab-range-logs" class="tab-pane" style="background: rgba(255,255,255,0.8); padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-                            <h3 style="margin-bottom: 10px; color: #333;">時間區間數位軌跡查詢</h3>
-                            <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">請設定開始與結束時間區間，查詢全校所有使用者之數位操作歷程。</p>
-                            
-                            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 15px;">
-                                <label style="font-weight: bold;">開始時間：<input type="datetime-local" id="query-range-start" class="form-input date-input" style="padding: 6px 10px;"></label>
-                                <label style="font-weight: bold;">結束時間：<input type="datetime-local" id="query-range-end" class="form-input date-input" style="padding: 6px 10px;"></label>
-                                <button class="btn btn-primary" style="padding: 8px 16px; font-size: 0.9em;" onclick="app.searchTimeRangeLogs()">查詢軌跡</button>
-                                <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.9em; background: #27ae60; color: white; border: none;" onclick="app.exportTimeRangeLogsExcel()">匯出 Excel 報表</button>
+                                <div class="table-responsive" style="max-height: 450px; overflow-y: auto; background: white; border-radius: 8px; border: 1px solid #eee;">
+                                    <table class="schedule-table" style="font-size: 0.9em; margin-bottom: 0;">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 170px;">時間</th>
+                                                <th style="width: 90px;">帳號</th>
+                                                <th style="width: 120px;">動作項目</th>
+                                                <th>詳細說明</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="user-logs-list-body">
+                                            <tr><td colspan="4" style="color: #888;">請選擇使用者並點擊「查詢紀錄」</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
 
-                            <div class="table-responsive" style="max-height: 450px; overflow-y: auto; background: white; border-radius: 8px; border: 1px solid #eee;">
-                                <table class="schedule-table" style="font-size: 0.9em; margin-bottom: 0;">
-                                    <thead>
-                                        <tr>
-                                            <th style="width: 170px;">時間</th>
-                                            <th style="width: 90px;">帳號</th>
-                                            <th style="width: 120px;">動作項目</th>
-                                            <th>詳細說明</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="range-logs-list-body">
-                                        <tr><td colspan="4" style="color: #888;">請選擇時間區間並點擊「查詢軌跡」</td></tr>
-                                    </tbody>
-                                </table>
+                            <!-- 次頁籤 2: 時間區間數位軌跡 -->
+                            <div id="subtab-range-logs" class="subtab-pane" style="display: none;">
+                                <h3 style="margin-bottom: 10px; color: #333;">時間區間數位軌跡查詢</h3>
+                                <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">請設定開始與結束時間區間，查詢全校所有使用者之數位操作歷程。</p>
+                                
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 15px;">
+                                    <label style="font-weight: bold;">開始時間：<input type="datetime-local" id="query-range-start" class="form-input date-input" style="padding: 6px 10px;"></label>
+                                    <label style="font-weight: bold;">結束時間：<input type="datetime-local" id="query-range-end" class="form-input date-input" style="padding: 6px 10px;"></label>
+                                    <button class="btn btn-primary" style="padding: 8px 16px; font-size: 0.9em;" onclick="app.searchTimeRangeLogs()">查詢軌跡</button>
+                                    <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.9em; background: #27ae60; color: white; border: none;" onclick="app.exportTimeRangeLogsExcel()">匯出 Excel 報表</button>
+                                </div>
+
+                                <div class="table-responsive" style="max-height: 450px; overflow-y: auto; background: white; border-radius: 8px; border: 1px solid #eee;">
+                                    <table class="schedule-table" style="font-size: 0.9em; margin-bottom: 0;">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 170px;">時間</th>
+                                                <th style="width: 90px;">帳號</th>
+                                                <th style="width: 120px;">動作項目</th>
+                                                <th>詳細說明</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="range-logs-list-body">
+                                            <tr><td colspan="4" style="color: #888;">請選擇時間區間並點擊「查詢軌跡」</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- 次頁籤 3: 上線時段 Heatmap -->
+                            <div id="subtab-heatmap" class="subtab-pane" style="display: none;">
+                                <h3 style="margin-bottom: 10px; color: #333;">上線與登入時段 Heatmap 熱力圖</h3>
+                                <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">呈現指定時間區間內，星期一至星期日各小時 (00:00 - 23:00) 之使用者活躍熱度。</p>
+                                
+                                <div class="chart-filter-bar">
+                                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                        <label style="font-weight: bold;">開始：<input type="datetime-local" id="heatmap-start" class="form-input date-input" style="padding: 6px 10px;"></label>
+                                        <label style="font-weight: bold;">結束：<input type="datetime-local" id="heatmap-end" class="form-input date-input" style="padding: 6px 10px;"></label>
+                                    </div>
+                                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                                        <button class="btn btn-preset" onclick="app.setFilterPreset('heatmap', 'today')">今天</button>
+                                        <button class="btn btn-preset" onclick="app.setFilterPreset('heatmap', '7days')">近 7 天</button>
+                                        <button class="btn btn-preset" onclick="app.setFilterPreset('heatmap', '30days')">近 30 天</button>
+                                        <button class="btn btn-primary" style="padding: 8px 16px; font-size: 0.9em; margin-left: 5px;" onclick="app.loadHeatmapData()">查詢 Heatmap</button>
+                                    </div>
+                                </div>
+
+                                <div id="heatmap-legend" class="heatmap-legend" style="display: none;">
+                                    <span>登入熱度：</span>
+                                    <span class="legend-box level-0">0 次</span>
+                                    <span class="legend-box level-1">1-2 次</span>
+                                    <span class="legend-box level-2">3-5 次</span>
+                                    <span class="legend-box level-3">6-9 次</span>
+                                    <span class="legend-box level-4">10+ 次</span>
+                                </div>
+
+                                <div class="table-responsive" style="overflow-x: auto; background: white; border-radius: 12px; padding: 15px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                                    <div id="heatmap-grid-container">
+                                        <p style="color: #888; text-align: center; padding: 20px;">載入中或請點擊「查詢 Heatmap」</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 次頁籤 4: 登入人次折線圖 -->
+                            <div id="subtab-line-chart" class="subtab-pane" style="display: none;">
+                                <h3 style="margin-bottom: 10px; color: #333;">登入人次時間趨勢折線圖</h3>
+                                <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">追蹤指定時間區間內的使用者登入活躍人次動態走勢。</p>
+                                
+                                <div class="chart-filter-bar">
+                                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                        <label style="font-weight: bold;">開始：<input type="datetime-local" id="line-chart-start" class="form-input date-input" style="padding: 6px 10px;"></label>
+                                        <label style="font-weight: bold;">結束：<input type="datetime-local" id="line-chart-end" class="form-input date-input" style="padding: 6px 10px;"></label>
+                                        <label style="font-weight: bold;">統計粒度：
+                                            <select id="line-chart-granularity" class="form-input" style="padding: 6px 10px; border-radius: 8px;">
+                                                <option value="auto">自動判斷</option>
+                                                <option value="hour">按每小時</option>
+                                                <option value="day">按每天</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                                        <button class="btn btn-preset" onclick="app.setFilterPreset('line-chart', 'today')">今天</button>
+                                        <button class="btn btn-preset" onclick="app.setFilterPreset('line-chart', '7days')">近 7 天</button>
+                                        <button class="btn btn-preset" onclick="app.setFilterPreset('line-chart', '30days')">近 30 天</button>
+                                        <button class="btn btn-primary" style="padding: 8px 16px; font-size: 0.9em; margin-left: 5px;" onclick="app.loadLineChartData()">產生趨勢圖</button>
+                                    </div>
+                                </div>
+
+                                <div class="chart-wrapper">
+                                    <canvas id="loginLineChartCanvas"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- 次頁籤 5: 登入尖峰與離峰統計圖 -->
+                            <div id="subtab-peak-stats" class="subtab-pane" style="display: none;">
+                                <h3 style="margin-bottom: 10px; color: #333;">登入尖峰與離峰統計分析</h3>
+                                <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">自動計算流量最高與最低的關鍵時段，並呈現全日各時段流量分佈狀況。</p>
+                                
+                                <div class="chart-filter-bar">
+                                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                        <label style="font-weight: bold;">開始：<input type="datetime-local" id="peak-stats-start" class="form-input date-input" style="padding: 6px 10px;"></label>
+                                        <label style="font-weight: bold;">結束：<input type="datetime-local" id="peak-stats-end" class="form-input date-input" style="padding: 6px 10px;"></label>
+                                    </div>
+                                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                                        <button class="btn btn-preset" onclick="app.setFilterPreset('peak-stats', 'today')">今天</button>
+                                        <button class="btn btn-preset" onclick="app.setFilterPreset('peak-stats', '7days')">近 7 天</button>
+                                        <button class="btn btn-preset" onclick="app.setFilterPreset('peak-stats', '30days')">近 30 天</button>
+                                        <button class="btn btn-primary" style="padding: 8px 16px; font-size: 0.9em; margin-left: 5px;" onclick="app.loadPeakStatsData()">計算統計圖</button>
+                                    </div>
+                                </div>
+
+                                <div class="kpi-grid">
+                                    <div class="kpi-card peak">
+                                        <div class="kpi-title">🔥 尖峰登入時段</div>
+                                        <div class="kpi-value" id="kpi-peak-time">--:00</div>
+                                        <div class="kpi-subtitle" id="kpi-peak-count">共 0 人次登入</div>
+                                    </div>
+                                    <div class="kpi-card offpeak">
+                                        <div class="kpi-title">❄️ 離峰登入時段</div>
+                                        <div class="kpi-value" id="kpi-offpeak-time">--:00</div>
+                                        <div class="kpi-subtitle" id="kpi-offpeak-count">共 0 人次登入</div>
+                                    </div>
+                                    <div class="kpi-card total">
+                                        <div class="kpi-title">📊 累積登入總人次</div>
+                                        <div class="kpi-value" id="kpi-total-logins">0</div>
+                                        <div class="kpi-subtitle">指定時間區間內</div>
+                                    </div>
+                                    <div class="kpi-card avg">
+                                        <div class="kpi-title">⚡ 平均每小時登入</div>
+                                        <div class="kpi-value" id="kpi-avg-logins">0.0</div>
+                                        <div class="kpi-subtitle">活躍時段平均</div>
+                                    </div>
+                                </div>
+
+                                <div class="chart-wrapper">
+                                    <canvas id="peakStatsChartCanvas"></canvas>
+                                </div>
                             </div>
                         </div>
                     </div>
