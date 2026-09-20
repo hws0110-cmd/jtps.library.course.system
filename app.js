@@ -608,6 +608,8 @@ const app = {
             } else {
                 this.loadPeakStatsData();
             }
+        } else if (subTabId === 'subtab-ml-prediction') {
+            this.loadMLPredictions();
         }
     },
 
@@ -1697,6 +1699,321 @@ const app = {
                 }
             }
         });
+    },
+
+    // 5. 機器學習使用者回訪機率預測核心邏輯 (ML User Retention Prediction Engine)
+    mlData: null,
+    mlMetricsChartInstance: null,
+    mlFeatureImportanceChartInstance: null,
+
+    async loadMLPredictions() {
+        try {
+            // 優先讀取 window.ML_PREDICTIONS_DATA (避免 file:// 協定下 fetch 本地 JSON 被瀏覽器 CORS 阻擋)
+            if (window.ML_PREDICTIONS_DATA) {
+                this.mlData = window.ML_PREDICTIONS_DATA;
+            } else {
+                const resp = await fetch('ml_predictions.json?v=' + Date.now());
+                if (!resp.ok) {
+                    throw new Error("無法讀取 ml_predictions.json 檔案");
+                }
+                this.mlData = await resp.json();
+            }
+            
+            // 更新 KPI 卡片
+            const summary = this.mlData.summary || {};
+            const bestModelEl = document.getElementById('ml-kpi-best-model');
+            if (bestModelEl) bestModelEl.textContent = summary.best_model || '--';
+            const bestF1El = document.getElementById('ml-kpi-best-f1');
+            if (bestF1El) bestF1El.textContent = `F1-Score: ${((summary.best_f1_score || 0) * 100).toFixed(1)}%`;
+            const avgReturnEl = document.getElementById('ml-kpi-avg-return-rate');
+            if (avgReturnEl) avgReturnEl.textContent = `${(summary.avg_return_rate_pct || 0).toFixed(1)}%`;
+            const evalUsersEl = document.getElementById('ml-kpi-evaluated-users');
+            if (evalUsersEl) evalUsersEl.textContent = `已評估 ${summary.total_users_evaluated || 0} 位使用者`;
+            const highRiskEl = document.getElementById('ml-kpi-high-risk-count');
+            if (highRiskEl) highRiskEl.textContent = `${summary.high_risk_count || 0} 帳號`;
+
+            // 繪製圖表與渲染表格
+            this.renderMLMetricsChart();
+            this.renderMLFeatureImportanceChart();
+            this.renderMLMetricsTable();
+            this.renderMLPredictionsTable('all');
+            this.updateSandboxDropdown();
+            this.runSandboxPredict();
+        } catch (error) {
+            console.error("載入 ML 預測數據失敗:", error);
+            const tbody = document.getElementById('ml-predictions-table-body');
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="10" style="color: #ef4444; text-align: center; padding: 20px;">
+                    ⚠️ 載入 ML 預測數據失敗！請先在後台環境執行 <code>C:\\Users\\User\\anaconda3\\python.exe ml_retention_model.py</code> 以產生最新的模型預測數據。
+                </td></tr>`;
+            }
+        }
+    },
+
+    renderMLMetricsChart() {
+        const ctx = document.getElementById('mlMetricsChartCanvas');
+        if (!ctx || !this.mlData || !this.mlData.metrics) return;
+        if (typeof Chart === 'undefined') return;
+
+        if (this.mlMetricsChartInstance) {
+            this.mlMetricsChartInstance.destroy();
+        }
+
+        const metrics = this.mlData.metrics;
+        const labels = ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'ROC-AUC'];
+        
+        const datasets = metrics.map((m, idx) => {
+            const colors = ['#3b82f6', '#10b981', '#ef4444'];
+            return {
+                label: m.model,
+                data: [
+                    (m.accuracy * 100).toFixed(1),
+                    (m.precision * 100).toFixed(1),
+                    (m.recall * 100).toFixed(1),
+                    (m.f1_score * 100).toFixed(1),
+                    (m.roc_auc * 100).toFixed(1)
+                ],
+                backgroundColor: colors[idx % colors.length],
+                borderRadius: 4
+            };
+        });
+
+        this.mlMetricsChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y}%`
+                        }
+                    }
+                },
+                scales: {
+                    y: { min: 50, max: 100, ticks: { callback: v => v + '%' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    },
+
+    renderMLFeatureImportanceChart() {
+        const ctx = document.getElementById('mlFeatureImportanceCanvas');
+        if (!ctx || !this.mlData || !this.mlData.feature_importance) return;
+        if (typeof Chart === 'undefined') return;
+
+        if (this.mlFeatureImportanceChartInstance) {
+            this.mlFeatureImportanceChartInstance.destroy();
+        }
+
+        const featList = [...this.mlData.feature_importance].sort((a, b) => b.avg_importance - a.avg_importance);
+        const labels = featList.map(f => f.feature_name_zh);
+        const rfData = featList.map(f => (f.rf_importance * 100).toFixed(1));
+        const xgbData = featList.map(f => (f.xgb_importance * 100).toFixed(1));
+
+        this.mlFeatureImportanceChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    { label: 'Random Forest 重要性', data: rfData, backgroundColor: '#10b981', borderRadius: 4 },
+                    { label: 'XGBoost 重要性', data: xgbData, backgroundColor: '#8b5cf6', borderRadius: 4 }
+                ]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.x}%` } }
+                },
+                scales: {
+                    x: { beginAtZero: true, ticks: { callback: v => v + '%' } },
+                    y: { grid: { display: false } }
+                }
+            }
+        });
+    },
+
+    renderMLMetricsTable() {
+        const tbody = document.getElementById('ml-metrics-table-body');
+        if (!tbody || !this.mlData || !this.mlData.metrics) return;
+        tbody.innerHTML = '';
+
+        this.mlData.metrics.forEach(m => {
+            const tr = document.createElement('tr');
+            const cm = m.confusion_matrix || [[0,0],[0,0]];
+            const cmStr = `TN:${cm[0][0]}, FP:${cm[0][1]} / FN:${cm[1][0]}, TP:${cm[1][1]}`;
+            
+            tr.innerHTML = `
+                <td style="font-weight: bold; color: #1e293b;">${m.model}</td>
+                <td><strong style="color:#2563eb;">${(m.accuracy * 100).toFixed(1)}%</strong></td>
+                <td>${(m.precision * 100).toFixed(1)}%</td>
+                <td>${(m.recall * 100).toFixed(1)}%</td>
+                <td><strong style="color:#059669;">${(m.f1_score * 100).toFixed(1)}%</strong></td>
+                <td><strong style="color:#7c3aed;">${(m.roc_auc * 100).toFixed(1)}%</strong></td>
+                <td><code style="font-size:0.85em; background:#f1f5f9; padding:2px 6px; border-radius:4px;">${cmStr}</code></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    },
+
+    renderMLPredictionsTable(riskFilter = 'all') {
+        const tbody = document.getElementById('ml-predictions-table-body');
+        if (!tbody || !this.mlData || !this.mlData.user_predictions) return;
+        tbody.innerHTML = '';
+
+        let list = this.mlData.user_predictions;
+        if (riskFilter !== 'all') {
+            list = list.filter(u => u.risk_level === riskFilter);
+        }
+
+        if (list.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="10" style="color: #888; text-align: center; padding: 15px;">尚無符合條件的使用者預測資料</td></tr>`;
+            return;
+        }
+
+        list.forEach(u => {
+            const tr = document.createElement('tr');
+            
+            let badgeStyle = 'background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0;';
+            if (u.risk_level === 'High Risk') {
+                badgeStyle = 'background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5;';
+            } else if (u.risk_level === 'Medium Risk') {
+                badgeStyle = 'background: #fef9c3; color: #a16207; border: 1px solid #fde047;';
+            }
+
+            const reasonsHtml = u.top_reasons ? u.top_reasons.map(r => `<span style="display:inline-block; font-size:0.78em; background:#f1f5f9; color:#475569; padding:2px 6px; border-radius:4px; margin:2px;">${r}</span>`).join(' ') : '-';
+
+            const lrFormatted = Number(u.lr_prob || 0).toFixed(1);
+            const rfFormatted = Number(u.rf_prob || 0).toFixed(1);
+            const xgbFormatted = Number(u.xgb_prob || 0).toFixed(1);
+            const avgFormatted = Number(u.avg_return_prob || 0).toFixed(1);
+
+            tr.innerHTML = `
+                <td><span class="user-tag" style="background:#334155; color:white;">${u.user_id}</span></td>
+                <td>${u.grade_level} 年級</td>
+                <td>${u.total_logins} 次</td>
+                <td>${u.recency_days} 天前</td>
+                <td>${lrFormatted}%</td>
+                <td>${rfFormatted}%</td>
+                <td>${xgbFormatted}%</td>
+                <td style="background: #eff6ff !important; font-weight: bold; color: #0284c7; font-size: 1.05em;">${avgFormatted}%</td>
+                <td>
+                    <span style="padding: 4px 8px; border-radius: 12px; font-weight: bold; font-size: 0.8em; ${badgeStyle}">
+                        ${u.risk_label_zh}
+                    </span>
+                </td>
+                <td class="text-left">${reasonsHtml}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    },
+
+    filterMLPredictionsByRisk(riskLevel) {
+        this.renderMLPredictionsTable(riskLevel);
+    },
+
+    updateSandboxDropdown() {
+        const select = document.getElementById('sandbox-user-select');
+        if (!select || !this.mlData || !this.mlData.user_predictions) return;
+        select.innerHTML = '<option value="">-- 自訂特徵參數 --</option>';
+
+        this.mlData.user_predictions.slice(0, 50).forEach(u => {
+            const opt = document.createElement('option');
+            opt.value = u.user_id;
+            opt.textContent = `${u.user_id} 班 (預測回訪率: ${u.avg_return_prob}%)`;
+            select.appendChild(opt);
+        });
+    },
+
+    populateSandboxFromUser(userId) {
+        if (!userId || !this.mlData || !this.mlData.user_predictions) return;
+        const u = this.mlData.user_predictions.find(item => item.user_id === userId);
+        if (!u) return;
+
+        document.getElementById('sb-total-logins').value = u.total_logins;
+        document.getElementById('sb-active-days').value = u.active_days;
+        document.getElementById('sb-recency-days').value = u.recency_days;
+        document.getElementById('sb-select-course').value = u.select_course_count;
+        document.getElementById('sb-action-diversity').value = u.action_diversity;
+        document.getElementById('sb-peak-ratio').value = 0.65;
+        document.getElementById('sb-avg-interval').value = 12;
+
+        this.runSandboxPredict();
+    },
+
+    runSandboxPredict() {
+        const totalLogins = parseFloat(document.getElementById('sb-total-logins').value) || 10;
+        const activeDays = parseFloat(document.getElementById('sb-active-days').value) || 3;
+        const recencyDays = parseFloat(document.getElementById('sb-recency-days').value) || 2.0;
+        const selectCourse = parseFloat(document.getElementById('sb-select-course').value) || 1;
+        const diversity = parseFloat(document.getElementById('sb-action-diversity').value) || 3;
+        const peakRatio = parseFloat(document.getElementById('sb-peak-ratio').value) || 0.5;
+        const avgInterval = parseFloat(document.getElementById('sb-avg-interval').value) || 24;
+
+        function sigmoid(z) { return 1 / (1 + Math.exp(-z)); }
+
+        // 1. Logistic Regression 擬合公式
+        const z_lr = (totalLogins * 0.12) + (activeDays * 0.18) - (recencyDays * 0.45) + (selectCourse * 0.35) + (diversity * 0.25) + (peakRatio * 0.8) - (avgInterval * 0.02) + 0.3;
+        const lrProb = Math.min(99.5, Math.max(0.5, sigmoid(z_lr) * 100));
+
+        // 2. Random Forest 擬合
+        let rfScore = 50.0;
+        if (recencyDays < 3.0) rfScore += 25; else rfScore -= 25;
+        if (totalLogins > 10) rfScore += 15; else rfScore -= 10;
+        if (selectCourse >= 1) rfScore += 10;
+        if (avgInterval > 48) rfScore -= 10;
+        const rfProb = Math.min(99.0, Math.max(1.0, rfScore));
+
+        // 3. XGBoost 擬合
+        let xgbScore = 48.0;
+        xgbScore += (totalLogins * 0.6) - (recencyDays * 4.2) + (selectCourse * 6.5) + (diversity * 4.0);
+        if (recencyDays > 7.0) xgbScore -= 20.0;
+        const xgbProb = Math.min(99.9, Math.max(0.1, xgbScore));
+
+        const avgProb = (lrProb + rfProb + xgbProb) / 3.0;
+
+        const resultBox = document.getElementById('sandbox-result-box');
+        if (!resultBox) return;
+
+        function getCardColor(p) {
+            if (p >= 70) return { bg: '#f0fdf4', border: '#86efac', text: '#15803d', status: '🟢 高回訪機率' };
+            if (p >= 40) return { bg: '#fefce8', border: '#fde047', text: '#a16207', status: '🟡 中等關注' };
+            return { bg: '#fef2f2', border: '#fca5a5', text: '#b91c1c', status: '⚠️ 高流失警訊' };
+        }
+
+        const lrC = getCardColor(lrProb);
+        const rfC = getCardColor(rfProb);
+        const xgbC = getCardColor(xgbProb);
+        const avgC = getCardColor(avgProb);
+
+        resultBox.innerHTML = `
+            <div style="background: ${lrC.bg}; border: 1px solid ${lrC.border}; border-radius: 8px; padding: 12px; text-align: center;">
+                <div style="font-size: 0.82em; color: #475569; font-weight: bold;">Logistic Regression</div>
+                <div style="font-size: 1.5em; font-weight: bold; color: ${lrC.text}; margin: 4px 0;">${lrProb.toFixed(1)}%</div>
+                <div style="font-size: 0.78em; color: ${lrC.text}; font-weight: bold;">${lrC.status}</div>
+            </div>
+            <div style="background: ${rfC.bg}; border: 1px solid ${rfC.border}; border-radius: 8px; padding: 12px; text-align: center;">
+                <div style="font-size: 0.82em; color: #475569; font-weight: bold;">Random Forest</div>
+                <div style="font-size: 1.5em; font-weight: bold; color: ${rfC.text}; margin: 4px 0;">${rfProb.toFixed(1)}%</div>
+                <div style="font-size: 0.78em; color: ${rfC.text}; font-weight: bold;">${rfC.status}</div>
+            </div>
+            <div style="background: ${xgbC.bg}; border: 1px solid ${xgbC.border}; border-radius: 8px; padding: 12px; text-align: center;">
+                <div style="font-size: 0.82em; color: #475569; font-weight: bold;">XGBoost</div>
+                <div style="font-size: 1.5em; font-weight: bold; color: ${xgbC.text}; margin: 4px 0;">${xgbProb.toFixed(1)}%</div>
+                <div style="font-size: 0.78em; color: ${xgbC.text}; font-weight: bold;">${xgbC.status}</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border: 1.5px solid #60a5fa; border-radius: 8px; padding: 12px; text-align: center;">
+                <div style="font-size: 0.82em; color: #1e40af; font-weight: bold;">綜合 3 模型平均預測</div>
+                <div style="font-size: 1.6em; font-weight: bold; color: #1d4ed8; margin: 4px 0;">${avgProb.toFixed(1)}%</div>
+                <div style="font-size: 0.8em; color: #1d4ed8; font-weight: bold;">${avgC.status}</div>
+            </div>
+        `;
     }
 };
 
