@@ -1,14 +1,12 @@
 name: Auto ML Retention Model Retraining
 
 on:
-  # 1. 定時排程：每週日 00:00 UTC (台灣時間 08:00) 自動重新訓練模型與更新結果
   schedule:
     - cron: '0 0 * * 0'
-  # 2. 手動觸發：可在 GitHub 介面 Actions 頁面隨時點擊 Run workflow
   workflow_dispatch:
 
 permissions:
-  contents: write # 賦予 GitHub Action 自動提交與 Push 權限
+  contents: write
 
 jobs:
   train-and-deploy:
@@ -21,7 +19,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: 安裝機器學習模組 (Install ML Dependencies)
         run: |
