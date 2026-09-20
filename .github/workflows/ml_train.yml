@@ -1,0 +1,40 @@
+name: Auto ML Retention Model Retraining
+
+on:
+  # 1. 定時排程：每週日 00:00 UTC (台灣時間 08:00) 自動重新訓練模型與更新結果
+  schedule:
+    - cron: '0 0 * * 0'
+  # 2. 手動觸發：可在 GitHub 介面 Actions 頁面隨時點擊 Run workflow
+  workflow_dispatch:
+
+permissions:
+  contents: write # 賦予 GitHub Action 自動提交與 Push 權限
+
+jobs:
+  train-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 檢出專案程式碼 (Checkout Repository)
+        uses: actions/checkout@v4
+
+      - name: 設定 Python 3.11 環境 (Setup Python)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安裝機器學習模組 (Install ML Dependencies)
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy scikit-learn xgboost matplotlib seaborn
+
+      - name: 執行 Python 機器學習模型訓練與推論 (Run ML Script)
+        run: |
+          python ml_retention_model.py
+
+      - name: 自動提交與推送最新預測數據 (Commit and Push updated ML predictions)
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add ml_predictions.json ml_predictions.js ml_model_comparison.png ml_roc_curves.png ml_feature_importance.png
+          git diff-index --quiet HEAD || (git commit -m "🤖 [Auto ML Bot] 自動重新訓練機器學習模型並更新預測數據" && git push)
