@@ -664,3 +664,76 @@ body {
         padding-bottom: 15px;
     }
 }
+
+/* ML User Retention Prediction Styles */
+.risk-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.risk-badge.risk-high {
+    background: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fca5a5;
+}
+.risk-badge.risk-med {
+    background: #fef9c3;
+    color: #a16207;
+    border: 1px solid #fde047;
+}
+.risk-badge.risk-low {
+    background: #dcfce7;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+}
+
+/* Responsive table container */
+.table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 8px;
+}
+
+/* Dedicated data table for ML analytics */
+.ml-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto !important;
+    font-size: 0.85rem;
+    background: white;
+}
+
+.ml-table th, .ml-table td {
+    padding: 8px 10px !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+    border-bottom: 1px solid #e2e8f0;
+    white-space: nowrap;
+    border-radius: 0 !important;
+    background: transparent;
+}
+
+.ml-table th {
+    background: #f8fafc !important;
+    color: #334155 !important;
+    font-weight: 700;
+    border-bottom: 2px solid #cbd5e1;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+
+.ml-table tr:hover td {
+    background: #f8fafc !important;
+}
+
+.ml-table td.text-left {
+    text-align: left !important;
+    white-space: normal;
+    min-width: 200px;
+}
+
+
