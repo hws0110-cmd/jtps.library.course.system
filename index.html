@@ -186,6 +186,7 @@
                                 <button class="sub-tab-btn" onclick="app.switchAnalyticsSubTab('subtab-heatmap')">上線時段 Heatmap</button>
                                 <button class="sub-tab-btn" onclick="app.switchAnalyticsSubTab('subtab-line-chart')">登入人次折線圖</button>
                                 <button class="sub-tab-btn" onclick="app.switchAnalyticsSubTab('subtab-peak-stats')">登入尖峰與離峰統計圖</button>
+                                <button class="sub-tab-btn" onclick="app.switchAnalyticsSubTab('subtab-ml-prediction')">🤖 機器學習回訪預測</button>
                             </div>
 
                             <!-- 次頁籤 1: 特定使用者紀錄查詢 -->
@@ -357,6 +358,191 @@
                                     <canvas id="peakStatsChartCanvas"></canvas>
                                 </div>
                             </div>
+
+                            <!-- 次頁籤 6: 機器學習使用者回訪機率預測 -->
+                            <div id="subtab-ml-prediction" class="subtab-pane" style="display: none;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 15px;">
+                                    <div>
+                                        <h3 style="margin: 0; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                                            <span>🤖 機器學習使用者回訪機率預測儀表板</span>
+                                            <span style="font-size: 0.65em; background: #e0f2fe; color: #0284c7; padding: 3px 8px; border-radius: 12px; font-weight: 500;">ML Predictive Engine</span>
+                                        </h3>
+                                        <p style="font-size: 0.88em; color: #64748b; margin-top: 4px;">
+                                            整合網站行為 Log，透過 <strong>Logistic Regression</strong>、<strong>Random Forest</strong> 與 <strong>XGBoost</strong> 三大模型比較與評估，預測使用者回訪/留存機率。
+                                        </p>
+                                    </div>
+                                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                        <span style="font-size: 0.78em; background: #f1f5f9; color: #475569; padding: 5px 10px; border-radius: 6px; border: 1px solid #cbd5e1; display: inline-flex; align-items: center; gap: 4px;">
+                                            ⚡ GitHub Actions 雲端自動排程運作中
+                                        </span>
+                                        <button class="btn btn-primary" style="padding: 8px 16px; font-size: 0.88em; display: flex; align-items: center; gap: 6px;" onclick="app.loadMLPredictions()">
+                                            🔄 載入/重整 ML 機器學習預測數據
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- ML KPI 總覽卡片 -->
+                                <div class="kpi-grid" style="margin-bottom: 20px;">
+                                    <div class="kpi-card" style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-left: 4px solid #3b82f6;">
+                                        <div class="kpi-title" style="color: #1e40af;">🏆 最佳 F1 效能模型</div>
+                                        <div class="kpi-value" id="ml-kpi-best-model" style="color: #1d4ed8; font-size: 1.4em;">--</div>
+                                        <div class="kpi-subtitle" id="ml-kpi-best-f1">F1-Score: --</div>
+                                    </div>
+                                    <div class="kpi-card" style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-left: 4px solid #22c55e;">
+                                        <div class="kpi-title" style="color: #166534;">📈 預估整體回訪率</div>
+                                        <div class="kpi-value" id="ml-kpi-avg-return-rate" style="color: #15803d;">--%</div>
+                                        <div class="kpi-subtitle" id="ml-kpi-evaluated-users">已評估 -- 位使用者</div>
+                                    </div>
+                                    <div class="kpi-card" style="background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); border-left: 4px solid #ef4444;">
+                                        <div class="kpi-title" style="color: #991b1b;">⚠️ 高流失風險帳號數</div>
+                                        <div class="kpi-value" id="ml-kpi-high-risk-count" style="color: #b91c1c;">--</div>
+                                        <div class="kpi-subtitle">回訪機率 &lt; 40%</div>
+                                    </div>
+                                    <div class="kpi-card" style="background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%); border-left: 4px solid #a855f7;">
+                                        <div class="kpi-title" style="color: #6b21a8;">⚡ 平均特徵因子數</div>
+                                        <div class="kpi-value" style="color: #7e22ce;">9 項</div>
+                                        <div class="kpi-subtitle">涵蓋活躍度/時序/行為</div>
+                                    </div>
+                                </div>
+
+                                <!-- 模型指標對比圖表區 -->
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 15px; margin-bottom: 25px;">
+                                    <div style="background: white; padding: 18px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+                                        <h4 style="margin: 0 0 12px 0; color: #334155; font-size: 1.05em; display: flex; justify-content: space-between; align-items: center;">
+                                            <span>📊 三大模型評估指標比較 (Metrics Comparison)</span>
+                                            <span style="font-size: 0.75em; color: #64748b; font-weight: normal;">Accuracy / Precision / Recall / F1 / ROC-AUC</span>
+                                        </h4>
+                                        <div style="height: 280px; position: relative;">
+                                            <canvas id="mlMetricsChartCanvas"></canvas>
+                                        </div>
+                                    </div>
+                                    
+                                    <div style="background: white; padding: 18px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+                                        <h4 style="margin: 0 0 12px 0; color: #334155; font-size: 1.05em; display: flex; justify-content: space-between; align-items: center;">
+                                            <span>🎯 網站行為預測關鍵特徵重要性 (Feature Importance)</span>
+                                            <span style="font-size: 0.75em; color: #64748b; font-weight: normal;">Random Forest & XGBoost</span>
+                                        </h4>
+                                        <div style="height: 280px; position: relative;">
+                                            <canvas id="mlFeatureImportanceCanvas"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 模型數據對照細節表格 -->
+                                <div style="background: white; border-radius: 12px; padding: 18px; border: 1px solid #e2e8f0; box-shadow: 0 2px 6px rgba(0,0,0,0.03); margin-bottom: 25px; overflow: hidden;">
+                                    <h4 style="margin: 0 0 12px 0; color: #334155; font-size: 1em;">📋 模型效能數值詳細對照表 (Model Performance Metrics Matrix)</h4>
+                                    <div class="table-responsive">
+                                        <table class="ml-table" style="margin-bottom: 0;">
+                                            <thead>
+                                                <tr style="background: #f8fafc;">
+                                                    <th>模型名稱</th>
+                                                    <th>準確率 (Accuracy)</th>
+                                                    <th>精確率 (Precision)</th>
+                                                    <th>召回率 (Recall)</th>
+                                                    <th>F1-Score</th>
+                                                    <th>ROC-AUC</th>
+                                                    <th>混淆矩陣 [TN, FP / FN, TP]</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="ml-metrics-table-body">
+                                                <tr><td colspan="7" style="color: #888; text-align: center;">載入中...</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <!-- 單一使用者特徵調校與三模型沙盒即時預測工具 -->
+                                <div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-radius: 12px; padding: 20px; border: 1px solid #cbd5e1; box-shadow: 0 3px 10px rgba(0,0,0,0.04); margin-bottom: 25px;">
+                                    <h4 style="margin: 0 0 8px 0; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                                        <span>🧪 互動式使用者行為特徵調校與三模型即時推論沙盒</span>
+                                    </h4>
+                                    <p style="font-size: 0.85em; color: #475569; margin-bottom: 15px;">調整下方的特徵參數（或選取特定班級自動載入），即可即時計算並比較 <strong>Logistic Regression</strong>、<strong>Random Forest</strong> 與 <strong>XGBoost</strong> 的回訪機率預測！</p>
+                                    
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 15px;">
+                                        <div>
+                                            <label style="font-size: 0.82em; font-weight: bold; color: #334155;">選擇現有班級快速帶入：</label>
+                                            <select id="sandbox-user-select" class="form-input" style="padding: 6px 10px; font-size: 0.85em; background: white;" onchange="app.populateSandboxFromUser(this.value)">
+                                                <option value="">-- 自訂特徵參數 --</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style="font-size: 0.82em; font-weight: bold; color: #334155;">歷史累積登入次數：</label>
+                                            <input type="number" id="sb-total-logins" class="form-input" value="12" min="1" max="100" style="padding: 6px 10px; font-size: 0.85em; background: white;">
+                                        </div>
+                                        <div>
+                                            <label style="font-size: 0.82em; font-weight: bold; color: #334155;">歷史活躍天數：</label>
+                                            <input type="number" id="sb-active-days" class="form-input" value="5" min="1" max="60" style="padding: 6px 10px; font-size: 0.85em; background: white;">
+                                        </div>
+                                        <div>
+                                            <label style="font-size: 0.82em; font-weight: bold; color: #334155;">距最近登入位移天數：</label>
+                                            <input type="number" id="sb-recency-days" class="form-input" value="1.5" step="0.5" min="0" max="60" style="padding: 6px 10px; font-size: 0.85em; background: white;">
+                                        </div>
+                                        <div>
+                                            <label style="font-size: 0.82em; font-weight: bold; color: #334155;">成功選課次數：</label>
+                                            <input type="number" id="sb-select-course" class="form-input" value="1" min="0" max="10" style="padding: 6px 10px; font-size: 0.85em; background: white;">
+                                        </div>
+                                        <div>
+                                            <label style="font-size: 0.82em; font-weight: bold; color: #334155;">操作種類多樣性：</label>
+                                            <input type="number" id="sb-action-diversity" class="form-input" value="4" min="1" max="10" style="padding: 6px 10px; font-size: 0.85em; background: white;">
+                                        </div>
+                                        <div>
+                                            <label style="font-size: 0.82em; font-weight: bold; color: #334155;">熱門時段操作比例 (0.0~1.0)：</label>
+                                            <input type="number" id="sb-peak-ratio" class="form-input" value="0.65" step="0.05" min="0" max="1" style="padding: 6px 10px; font-size: 0.85em; background: white;">
+                                        </div>
+                                        <div>
+                                            <label style="font-size: 0.82em; font-weight: bold; color: #334155;">平均操作間隔 (小時)：</label>
+                                            <input type="number" id="sb-avg-interval" class="form-input" value="12.0" step="1" min="1" max="200" style="padding: 6px 10px; font-size: 0.85em; background: white;">
+                                        </div>
+                                    </div>
+                                    
+                                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                        <button class="btn btn-primary" style="padding: 8px 20px; font-size: 0.9em; background: #2563eb;" onclick="app.runSandboxPredict()">⚡ 執行 3 大模型即時回訪推論</button>
+                                    </div>
+
+                                    <!-- 沙盒推論結果對比列 -->
+                                    <div id="sandbox-result-box" style="margin-top: 15px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+                                        <!-- 由 JS 動態生成 -->
+                                    </div>
+                                </div>
+
+                                <!-- 使用者回訪機率與風險預估明細表 -->
+                                <div style="background: white; border-radius: 12px; padding: 18px; border: 1px solid #e2e8f0; box-shadow: 0 2px 6px rgba(0,0,0,0.03); overflow: hidden;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                                        <h3 style="margin: 0; color: #333; font-size: 1.1em;">👥 使用者回訪機率預測與風險等級標籤明細</h3>
+                                        <div style="display: flex; gap: 8px; align-items: center;">
+                                            <label style="font-size: 0.85em; font-weight: bold; color: #555;">篩選風險等級：</label>
+                                            <select id="ml-risk-filter" class="form-input" style="padding: 4px 10px; font-size: 0.85em; border-radius: 6px;" onchange="app.filterMLPredictionsByRisk(this.value)">
+                                                <option value="all">全部等級 (All)</option>
+                                                <option value="High Risk">⚠️ 高流失風險 (機率 &lt; 40%)</option>
+                                                <option value="Medium Risk">🟡 中等留存 (機率 40%-69%)</option>
+                                                <option value="Low Risk">🟢 高回訪機率 (機率 &ge; 70%)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
+                                        <table class="ml-table" style="margin-bottom: 0;">
+                                            <thead>
+                                                <tr>
+                                                    <th>帳號/班級</th>
+                                                    <th>年級</th>
+                                                    <th>總登入</th>
+                                                    <th>最近登入隔</th>
+                                                    <th>Logistic Reg.</th>
+                                                    <th>Random Forest</th>
+                                                    <th>XGBoost</th>
+                                                    <th style="background: #eff6ff !important; color: #0284c7 !important;">綜合平均機率</th>
+                                                    <th>預測狀態與風險等級</th>
+                                                    <th style="min-width: 200px;">關鍵影響特徵說明</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="ml-predictions-table-body">
+                                                <tr><td colspan="10" style="color: #888; text-align: center; padding: 20px;">載入中...</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -373,6 +559,7 @@
 
     <img id="school-logo" src="校徽.png" alt="校徽" class="floating-logo">
 
+    <script src="ml_predictions.js"></script>
     <script src="app.js?v=3"></script>
 </body>
 </html>
