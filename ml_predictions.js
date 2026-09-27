@@ -101,7 +101,7 @@ window.ML_PREDICTIONS_DATA = {
     {
       "feature": "peak_hour_ratio",
       "feature_name_zh": "熱門尖峰時段操作比例",
-      "lr_coef": 0.2944381342108831,
+      "lr_coef": 0.29443813421088305,
       "rf_importance": 0.15394107687439848,
       "xgb_importance": 0.24234141409397125,
       "avg_importance": 0.19814124548418488
@@ -109,7 +109,7 @@ window.ML_PREDICTIONS_DATA = {
     {
       "feature": "avg_interval_hours",
       "feature_name_zh": "平均操作間隔小時數",
-      "lr_coef": 0.04080201272220961,
+      "lr_coef": 0.04080201272220987,
       "rf_importance": 0.24021141814241845,
       "xgb_importance": 0.11644747108221054,
       "avg_importance": 0.17832944461231448
@@ -117,7 +117,7 @@ window.ML_PREDICTIONS_DATA = {
     {
       "feature": "recency_days",
       "feature_name_zh": "距最近登入位移天數",
-      "lr_coef": -0.685203219584864,
+      "lr_coef": -0.6852032195848642,
       "rf_importance": 0.20552268680490113,
       "xgb_importance": 0.08423899114131927,
       "avg_importance": 0.14488083897311022
@@ -125,7 +125,7 @@ window.ML_PREDICTIONS_DATA = {
     {
       "feature": "total_logins",
       "feature_name_zh": "總登入/操作次數",
-      "lr_coef": -0.18369075080096375,
+      "lr_coef": -0.1836907508009636,
       "rf_importance": 0.15943847555744817,
       "xgb_importance": 0.09422031044960022,
       "avg_importance": 0.1268293930035242
@@ -133,7 +133,7 @@ window.ML_PREDICTIONS_DATA = {
     {
       "feature": "action_diversity",
       "feature_name_zh": "操作動作種類多樣性",
-      "lr_coef": 0.16538483778429458,
+      "lr_coef": 0.1653848377842946,
       "rf_importance": 0.041514182280465294,
       "xgb_importance": 0.12542518973350525,
       "avg_importance": 0.08346968600698527
@@ -149,7 +149,7 @@ window.ML_PREDICTIONS_DATA = {
     {
       "feature": "grade_level",
       "feature_name_zh": "使用者所屬年級 (1-6年級)",
-      "lr_coef": 0.03309717246865209,
+      "lr_coef": 0.03309717246865239,
       "rf_importance": 0.05486587439977389,
       "xgb_importance": 0.09480126202106476,
       "avg_importance": 0.07483356821041932
@@ -157,7 +157,7 @@ window.ML_PREDICTIONS_DATA = {
     {
       "feature": "cancel_course_count",
       "feature_name_zh": "取消選課變更次數",
-      "lr_coef": 0.06662656257236028,
+      "lr_coef": 0.06662656257236062,
       "rf_importance": 0.02001619566285833,
       "xgb_importance": 0.1252032071352005,
       "avg_importance": 0.07260970139902942
@@ -165,7 +165,7 @@ window.ML_PREDICTIONS_DATA = {
     {
       "feature": "select_course_count",
       "feature_name_zh": "成功選課次數",
-      "lr_coef": 0.2621321127901857,
+      "lr_coef": 0.2621321127901855,
       "rf_importance": 0.04866467291085498,
       "xgb_importance": 0.0378170944750309,
       "avg_importance": 0.04324088369294294
